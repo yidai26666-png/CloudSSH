@@ -522,3 +522,5 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=newbietan/CloudSSH&type=date&legend=top-left&sealed_token=W6EXioqdcb2BEJNCLBVZIvRGDUYCaxki-xY1FfDVex2S8hS-ABAc84mDRxLIx0wQLFCd3Wh_p-t4bD4yT_iPkhi0_7Aciixag0Vj0_Qsqv3Wh_pbiD6Ykw" />
  </picture>
 </a>
+
+<!-- Git integration force rebuild - 2026-08-18 -->

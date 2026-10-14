@@ -3,7 +3,10 @@ import { SSHSession } from '../../src/worker/ssh-session';
 
 function createSession(stdout: string) {
   const send = vi.fn();
-  const fetch = vi.fn(async () => Response.json({ success: true }));
+  const fetch = vi.fn(
+    async (input: string | URL | Request, init?: RequestInit): Promise<Response> =>
+      Response.json({ success: true })
+  );
   const env = {
     USER_DB: {
       idFromName: vi.fn(() => 'user-db-id'),
@@ -27,7 +30,7 @@ function createSession(stdout: string) {
     undefined,
     env as never,
     '7',
-    '99',
+    '99'
   );
   (session as any).executeAgentCommand = vi.fn(async () => ({
     stdout,
@@ -48,11 +51,13 @@ describe('SSHSession OS detection', () => {
     expect(fetch).toHaveBeenCalledOnce();
     const request = fetch.mock.calls[0][0] as Request;
     await expect(request.json()).resolves.toEqual({ user_id: 7, os: 'debian' });
-    expect(send).toHaveBeenCalledWith(JSON.stringify({
-      type: 'os_detected',
-      serverId: 9,
-      os: 'debian',
-    }));
+    expect(send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'os_detected',
+        serverId: 9,
+        os: 'debian',
+      })
+    );
   });
 
   it('unknown 不持久化也不通知，留待下次连接重新探测', async () => {

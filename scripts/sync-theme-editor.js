@@ -13,12 +13,14 @@ const uiThemes = readObjectLiteral(themeSource, 'export const UI_THEMES:');
 const stylePresets = readObjectLiteral(themeSource, 'export const UI_STYLE_PRESETS:');
 const builtInAppearances = readObjectLiteral(themeSource, 'export const BUILT_IN_APPEARANCE:');
 const colorSchemes = readObjectLiteral(themeSource, 'const COLOR_SCHEMES:');
+const builtInBackgrounds = readObjectLiteral(themeSource, 'export const BUILT_IN_BACKGROUND:');
+const builtInEffects = readObjectLiteral(themeSource, 'export const BUILT_IN_EFFECTS:');
+const builtInTypography = readObjectLiteral(themeSource, 'export const BUILT_IN_TYPOGRAPHY:');
 const labels = {
   'standard-dark': 'Standard Dark',
   'standard-light': 'Standard Light',
   cyberpunk: 'Cyberpunk',
-  glacier: 'Glacier',
-  gruvbox: 'Gruvbox',
+  'liquid-glass': 'Liquid Glass',
 };
 
 const presets = Object.fromEntries(
@@ -39,6 +41,11 @@ const presets = Object.fromEntries(
             ...(appearance.components || {}),
           },
         },
+        ...(builtInBackgrounds[themeName] ? { background: builtInBackgrounds[themeName] } : {}),
+        ...(Object.keys(builtInEffects[themeName] || {}).length
+          ? { effects: builtInEffects[themeName] }
+          : {}),
+        ...(builtInTypography[themeName] ? { typography: builtInTypography[themeName] } : {}),
         terminal: terminalThemes[themeName],
         ui: uiThemes[themeName],
       },
@@ -73,6 +80,7 @@ function readObjectLiteral(source, marker) {
   const objectEnd = findMatchingBrace(source, objectStart);
   const literal = source.slice(objectStart, objectEnd + 1);
   // 仓库源码属于受信任输入；这里只执行抽取出的纯数据对象，供静态 Pages 使用。
+  // pi-lens-ignore: no-global-eval-js
   return Function(`"use strict"; return (${literal});`)();
 }
 

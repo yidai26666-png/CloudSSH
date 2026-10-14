@@ -1,12 +1,14 @@
 import type { ITheme } from '@xterm/xterm';
 import {
-  THEME_MAX_BYTES,
-  THEME_SCHEMA_VERSION,
-  normalizeThemeData,
   type BuiltInThemeName,
   type ColorScheme,
   type NormalizedThemeData,
+  normalizeThemeData,
+  type ThemeBackground,
+  type ThemeEffects,
+  type ThemeTypography,
   type ThemeAppearance,
+  type ThemeBlur,
   type ThemeComponentStyles,
   type ThemeDensity,
   type ThemeFont,
@@ -17,11 +19,16 @@ import {
 } from '../../src/theme-schema';
 
 export {
-  THEME_MAX_BYTES,
-  THEME_SCHEMA_VERSION,
   type BuiltInThemeName,
   type ColorScheme,
+  type ThemeBackground,
+  type ThemeEffects,
+  type ThemeTypography,
+  MAX_CUSTOM_THEMES,
+  THEME_MAX_BYTES,
+  THEME_SCHEMA_VERSION,
   type ThemeAppearance,
+  type ThemeBlur,
   type ThemeComponentStyles,
   type ThemeDensity,
   type ThemeFont,
@@ -38,10 +45,14 @@ export interface ResolvedThemeAppearance {
   font: ThemeFont;
   shadow: ThemeShadow;
   motion: ThemeMotion;
+  blur: ThemeBlur;
   components: ThemeComponentStyles;
 }
 
-export type ImportedThemeData = Omit<NormalizedThemeData, 'schemaVersion' | 'colorScheme' | 'terminal'> & {
+export type ImportedThemeData = Omit<
+  NormalizedThemeData,
+  'schemaVersion' | 'colorScheme' | 'terminal'
+> & {
   schemaVersion?: number;
   colorScheme?: ColorScheme;
   terminal?: ITheme;
@@ -55,6 +66,7 @@ export const UI_STYLE_PRESETS: Record<UIStylePresetName, ResolvedThemeAppearance
     font: 'system',
     shadow: 'subtle',
     motion: 'reduced',
+    blur: 'subtle',
     components: {
       button: 'solid',
       input: 'boxed',
@@ -69,6 +81,7 @@ export const UI_STYLE_PRESETS: Record<UIStylePresetName, ResolvedThemeAppearance
     font: 'mono',
     shadow: 'none',
     motion: 'full',
+    blur: 'none',
     components: {
       button: 'outline',
       input: 'underline',
@@ -83,6 +96,7 @@ export const UI_STYLE_PRESETS: Record<UIStylePresetName, ResolvedThemeAppearance
     font: 'system',
     shadow: 'elevated',
     motion: 'reduced',
+    blur: 'strong',
     components: {
       button: 'soft',
       input: 'boxed',
@@ -97,10 +111,26 @@ export const UI_STYLE_PRESETS: Record<UIStylePresetName, ResolvedThemeAppearance
     font: 'mono',
     shadow: 'none',
     motion: 'reduced',
+    blur: 'none',
     components: {
       button: 'outline',
       input: 'boxed',
       card: 'flat',
+      tabs: 'segmented',
+    },
+  },
+  liquid: {
+    style: 'liquid',
+    shape: 'soft',
+    density: 'comfortable',
+    font: 'system',
+    shadow: 'elevated',
+    motion: 'full',
+    blur: 'strong',
+    components: {
+      button: 'soft',
+      input: 'boxed',
+      card: 'elevated',
       tabs: 'segmented',
     },
   },
@@ -163,19 +193,30 @@ export const THEMES = {
     cursorAccent: '#0a0a0a',
     selectionBackground: '#273747',
   },
-  glacier: {
-    background: '#0a192f',
-    foreground: '#64ffda',
-    cursor: '#e6f1ff',
-    cursorAccent: '#0a192f',
-    selectionBackground: '#112240',
-  },
-  gruvbox: {
-    background: '#282828',
-    foreground: '#ebdbb2',
-    cursor: '#d3869b',
-    cursorAccent: '#282828',
-    selectionBackground: '#504945',
+  'liquid-glass': {
+    background: '#fbfbfd',
+    foreground: '#1d1d1f',
+    cursor: '#0071e3',
+    cursorAccent: '#ffffff',
+    selectionBackground: '#b3d7ff',
+    selectionForeground: '#1d1d1f',
+    selectionInactiveBackground: '#e5f0ff',
+    black: '#1d1d1f',
+    red: '#ff3b30',
+    green: '#34c759',
+    yellow: '#ff9500',
+    blue: '#0071e3',
+    magenta: '#af52de',
+    cyan: '#55bef0',
+    white: '#8e8e93',
+    brightBlack: '#636366',
+    brightRed: '#ff453a',
+    brightGreen: '#30d158',
+    brightYellow: '#ffd60a',
+    brightBlue: '#409cff',
+    brightMagenta: '#bf5af2',
+    brightCyan: '#64d2ff',
+    brightWhite: '#1d1d1f',
   },
 } satisfies Record<string, ITheme>;
 
@@ -267,63 +308,34 @@ export const UI_THEMES: Record<BuiltInThemeName, Record<string, string>> = {
     '--agent-user-color': '#4af626',
     '--agent-agent-color': '#14d1ff',
   },
-  glacier: {
-    '--bg': '#0a192f',
-    '--bg-surface': '#0d2137',
-    '--bg-elevated': '#112240',
-    '--bg-terminal': '#061526',
-    '--text': '#64ffda',
-    '--text-muted': '#8892b0',
-    '--text-dim': '#495670',
-    '--accent': '#64ffda',
-    '--accent-secondary': '#e6f1ff',
-    '--accent-secondary-light': '#ccd6f6',
-    '--border': '#1d3557',
-    '--border-strong': '#495670',
-    '--error': '#ff6b6b',
-    '--error-bg': '#3d0000',
-    '--on-accent': '#0a192f',
-    '--surface-dot': '#1d3557',
-    '--scrollbar-track': 'rgba(10, 25, 47, 0.5)',
-    '--scrollbar-thumb': 'rgba(100, 255, 218, 0.2)',
-    '--scrollbar-thumb-hover': 'rgba(100, 255, 218, 0.4)',
-    '--scanline-tint': 'rgba(100, 255, 218, 0.02)',
-    '--accent-glow': 'rgba(100, 255, 218, 0.08)',
-    '--accent-bg': 'rgba(100, 255, 218, 0.1)',
-    '--modal-overlay': 'rgba(0, 0, 0, 0.85)',
-    '--on-surface': '#e6f1ff',
-    '--on-surface-variant': '#8892b0',
-    '--agent-user-color': '#64ffda',
-    '--agent-agent-color': '#e6f1ff',
-  },
-  gruvbox: {
-    '--bg': '#282828',
-    '--bg-surface': '#303030',
-    '--bg-elevated': '#282828',
-    '--bg-terminal': '#1d2021',
-    '--text': '#ebdbb2',
-    '--text-muted': '#a89984',
-    '--text-dim': '#665c54',
-    '--accent': '#b8bb26',
-    '--accent-secondary': '#83a598',
-    '--accent-secondary-light': '#8ec07c',
-    '--border': '#3c3836',
-    '--border-strong': '#665c54',
-    '--error': '#fb4934',
-    '--error-bg': '#3d0000',
-    '--on-accent': '#282828',
-    '--surface-dot': '#3c3836',
-    '--scrollbar-track': 'rgba(40, 40, 40, 0.5)',
-    '--scrollbar-thumb': 'rgba(168, 153, 132, 0.3)',
-    '--scrollbar-thumb-hover': 'rgba(168, 153, 132, 0.5)',
-    '--scanline-tint': 'rgba(184, 187, 38, 0.02)',
-    '--accent-glow': 'rgba(184, 187, 38, 0.08)',
-    '--accent-bg': 'rgba(184, 187, 38, 0.1)',
-    '--modal-overlay': 'rgba(0, 0, 0, 0.75)',
-    '--on-surface': '#ebdbb2',
-    '--on-surface-variant': '#a89984',
-    '--agent-user-color': '#b8bb26',
-    '--agent-agent-color': '#83a598',
+  'liquid-glass': {
+    '--bg': '#e6ecf4',
+    '--bg-surface': 'rgba(255, 255, 255, 0.22)',
+    '--bg-elevated': 'rgba(255, 255, 255, 0.38)',
+    '--bg-terminal': 'rgba(255, 255, 255, 0.88)',
+    '--text': '#1d1d1f',
+    '--text-muted': '#515154',
+    '--text-dim': '#69696e',
+    '--accent': '#0066da',
+    '--accent-secondary': '#5856d6',
+    '--accent-secondary-light': '#c7dfff',
+    '--border': 'rgba(255, 255, 255, 0.42)',
+    '--border-strong': 'rgba(255, 255, 255, 0.72)',
+    '--error': '#d70015',
+    '--error-bg': 'rgba(215, 0, 21, 0.12)',
+    '--on-accent': '#ffffff',
+    '--surface-dot': 'rgba(0, 0, 0, 0.08)',
+    '--scrollbar-track': 'rgba(0, 0, 0, 0.03)',
+    '--scrollbar-thumb': 'rgba(0, 0, 0, 0.18)',
+    '--scrollbar-thumb-hover': 'rgba(0, 0, 0, 0.32)',
+    '--scanline-tint': 'transparent',
+    '--accent-glow': 'rgba(0, 102, 218, 0.16)',
+    '--accent-bg': 'rgba(0, 102, 218, 0.1)',
+    '--modal-overlay': 'rgba(20, 24, 33, 0.28)',
+    '--on-surface': '#1d1d1f',
+    '--on-surface-variant': '#515154',
+    '--agent-user-color': '#0066da',
+    '--agent-agent-color': '#5856d6',
   },
 };
 
@@ -331,16 +343,43 @@ export const BUILT_IN_APPEARANCE: Record<BuiltInThemeName, ThemeAppearance> = {
   'standard-dark': { style: 'standard' },
   'standard-light': { style: 'standard' },
   cyberpunk: { style: 'cyberpunk' },
-  glacier: { style: 'soft' },
-  gruvbox: { style: 'dense' },
+  'liquid-glass': { style: 'liquid', shape: 'soft', blur: 'strong' },
 };
 
 const COLOR_SCHEMES: Record<BuiltInThemeName, ColorScheme> = {
   'standard-dark': 'dark',
   'standard-light': 'light',
   cyberpunk: 'dark',
-  glacier: 'dark',
-  gruvbox: 'dark',
+  'liquid-glass': 'light',
+};
+
+/** V3 内置主题的背景层配置（未列出的主题保持纯色背景） */
+export const BUILT_IN_BACKGROUND: Partial<Record<BuiltInThemeName, ThemeBackground>> = {
+  cyberpunk: {
+    type: 'linear',
+    stops: ['#0a0a0a', '#11170c'],
+    angle: 165,
+    scrim: 0.3,
+    animation: 'none',
+  },
+  'liquid-glass': {
+    type: 'mesh',
+    stops: ['#a2d2ff', '#d8b4fe', '#ffc8dd', '#bde0fe', '#ffdfba'],
+    angle: 135,
+    scrim: 0.35,
+    animation: 'drift',
+  },
+};
+
+/** V3 内置主题的效果配置（键存在且 >0 即启用） */
+export const BUILT_IN_EFFECTS: Partial<Record<BuiltInThemeName, ThemeEffects>> = {
+  cyberpunk: { scanline: 1, flicker: 1 },
+  'liquid-glass': { glow: 0.35 },
+};
+
+/** V3 内置主题的版式缩放（缺省 1/1） */
+export const BUILT_IN_TYPOGRAPHY: Partial<Record<BuiltInThemeName, ThemeTypography>> = {
+  'liquid-glass': { fontScale: 1.02, radiusScale: 1.4 },
 };
 
 let activeTerminalTheme: ITheme = THEMES.cyberpunk;
@@ -350,7 +389,7 @@ const terminalThemeListeners = new Set<(theme: ITheme) => void>();
 const colorSchemeListeners = new Set<(colorScheme: ColorScheme) => void>();
 
 export function isBuiltInTheme(value: string | null): value is BuiltInThemeName {
-  return !!value && Object.prototype.hasOwnProperty.call(THEMES, value);
+  return !!value && Object.hasOwn(THEMES, value);
 }
 
 export function applyBuiltInTheme(themeName: BuiltInThemeName): void {
@@ -360,6 +399,9 @@ export function applyBuiltInTheme(themeName: BuiltInThemeName): void {
     COLOR_SCHEMES[themeName],
     themeName,
     resolveThemeAppearance(BUILT_IN_APPEARANCE[themeName]),
+    BUILT_IN_BACKGROUND[themeName],
+    BUILT_IN_EFFECTS[themeName],
+    BUILT_IN_TYPOGRAPHY[themeName]
   );
 }
 
@@ -367,13 +409,16 @@ export function applyImportedTheme(data: ImportedThemeData): void {
   const normalized = normalizeImportedTheme(data);
   if (!normalized) return;
   const colorScheme = normalized.colorScheme ?? 'dark';
-  const fallbackName = normalized.baseTheme
-    || (colorScheme === 'light' ? 'standard-light' : 'cyberpunk');
+  const fallbackName =
+    normalized.baseTheme || (colorScheme === 'light' ? 'standard-light' : 'cyberpunk');
   const ui = { ...UI_THEMES[fallbackName], ...normalized.ui };
   const terminal = { ...THEMES[fallbackName], ...normalized.terminal };
   const fallbackAppearance = resolveThemeAppearance(BUILT_IN_APPEARANCE[fallbackName]);
   const appearance = resolveThemeAppearance(normalized.appearance, fallbackAppearance);
-  applyTheme(ui, terminal, colorScheme, 'custom', appearance);
+  const background = normalized.background ?? BUILT_IN_BACKGROUND[fallbackName];
+  const effects = { ...BUILT_IN_EFFECTS[fallbackName], ...normalized.effects };
+  const typography = normalized.typography ?? BUILT_IN_TYPOGRAPHY[fallbackName];
+  applyTheme(ui, terminal, colorScheme, 'custom', appearance, background, effects, typography);
 }
 
 export function normalizeImportedTheme(data: unknown): ImportedThemeData | null {
@@ -410,6 +455,9 @@ function applyTheme(
   colorScheme: ColorScheme,
   themeName: BuiltInThemeName | 'custom',
   appearance: ResolvedThemeAppearance,
+  background?: ThemeBackground,
+  effects?: ThemeEffects,
+  typography?: ThemeTypography
 ): void {
   activeTerminalTheme = terminal;
   activeColorScheme = colorScheme;
@@ -417,7 +465,9 @@ function applyTheme(
 
   if (typeof document !== 'undefined') {
     const root = document.documentElement;
-    Object.entries(ui).forEach(([property, value]) => root.style.setProperty(property, value));
+    Object.entries(ui).forEach(([property, value]) => {
+      root.style.setProperty(property, value);
+    });
     root.dataset.theme = themeName;
     root.dataset.colorScheme = colorScheme;
     root.dataset.uiStyle = appearance.style;
@@ -426,30 +476,104 @@ function applyTheme(
     root.dataset.uiFont = appearance.font;
     root.dataset.uiShadow = appearance.shadow;
     root.dataset.uiMotion = appearance.motion;
+    root.dataset.uiBlur = appearance.blur;
     root.dataset.componentButton = appearance.components.button;
     root.dataset.componentInput = appearance.components.input;
     root.dataset.componentCard = appearance.components.card;
     root.dataset.componentTabs = appearance.components.tabs;
     root.style.colorScheme = colorScheme;
     root.classList.toggle('dark', colorScheme === 'dark');
+    applyThemeV3Layers(root, background, effects, typography, colorScheme);
   }
 
-  terminalThemeListeners.forEach(listener => listener(terminal));
-  colorSchemeListeners.forEach(listener => listener(colorScheme));
+  terminalThemeListeners.forEach((listener) => {
+    listener(terminal);
+  });
+  colorSchemeListeners.forEach((listener) => {
+    listener(colorScheme);
+  });
+}
+
+/** V3 增量层：背景/效果/版式缩放全部走变量与 data 属性，不碰 DOM 结构 */
+function applyThemeV3Layers(
+  root: HTMLElement,
+  background: ThemeBackground | undefined,
+  effects: ThemeEffects | undefined,
+  typography: ThemeTypography | undefined,
+  colorScheme: ColorScheme
+): void {
+  root.style.setProperty('--app-bg-stack', resolveBackgroundStack(background, colorScheme));
+  root.dataset.bgAnimation =
+    background && background.animation === 'drift' && background.type !== 'solid'
+      ? 'drift'
+      : 'none';
+
+  root.dataset.fxScanline = effects?.scanline ? 'on' : 'off';
+  root.dataset.fxFlicker = effects?.flicker ? 'on' : 'off';
+  root.dataset.fxGlow = effects?.glow ? 'on' : 'off';
+  root.dataset.fxNoise = effects?.noise ? 'on' : 'off';
+  root.style.setProperty('--fx-scanline-opacity', String(effects?.scanline ?? 1));
+  // 闪烁频率随强度在 0.32s–0.12s 之间收紧
+  root.style.setProperty('--fx-flicker-speed', `${0.32 - 0.2 * (effects?.flicker ?? 1)}s`);
+  root.style.setProperty('--fx-glow-strength', String(effects?.glow ?? 0.6));
+  root.style.setProperty('--fx-noise-opacity', String(effects?.noise ?? 0.05));
+
+  root.style.setProperty('--radius-scale', String(typography?.radiusScale ?? 1));
+  root.style.setProperty('--type-scale', String(typography?.fontScale ?? 1));
+}
+
+/** 合成含读性遮罩的完整背景栈；无渐变时为 none，body 的 --bg 纯色兜底 */
+function resolveBackgroundStack(
+  background: ThemeBackground | undefined,
+  colorScheme: ColorScheme
+): string {
+  if (!background || background.type === 'solid' || background.stops.length < 2) return 'none';
+  const channel = colorScheme === 'dark' ? '0, 0, 0' : '255, 255, 255';
+  const scrim = `linear-gradient(rgba(${channel}, ${background.scrim}), rgba(${channel}, ${background.scrim}))`;
+  return `${scrim}, ${resolveBackgroundCss(background)}`;
+}
+
+/** 由 schema 背景配置合成 CSS 渐变串（停靠点均已过白名单校验，拼接安全） */
+export function resolveBackgroundCss(background: ThemeBackground | undefined): string {
+  if (!background || background.type === 'solid' || background.stops.length < 2) {
+    return 'var(--bg)';
+  }
+  switch (background.type) {
+    case 'linear':
+      return `linear-gradient(${background.angle}deg, ${background.stops.join(', ')})`;
+    case 'radial':
+      return `radial-gradient(ellipse at 50% 25%, ${background.stops.join(', ')})`;
+    case 'mesh': {
+      const [first, second, third, fourth, fifth] = background.stops;
+      const c1 = first;
+      const c2 = second ?? first;
+      const c3 = third ?? c2;
+      const c4 = fourth ?? c1;
+      const c5 = fifth ?? c2;
+      return [
+        `radial-gradient(at 18% 22%, ${c1} 0px, transparent 55%)`,
+        `radial-gradient(at 82% 28%, ${c2} 0px, transparent 50%)`,
+        `radial-gradient(at 50% 88%, ${c3} 0px, transparent 60%)`,
+        `radial-gradient(at 15% 90%, ${c4} 0px, transparent 55%)`,
+        `radial-gradient(at 85% 90%, ${c5} 0px, transparent 55%)`,
+        `linear-gradient(${background.angle}deg, ${c1} 0%, ${c2} 50%, ${c3} 100%)`,
+      ].join(', ');
+    }
+  }
 }
 
 export function resolveThemeAppearance(
   appearance?: ThemeAppearance,
-  fallback: ResolvedThemeAppearance = UI_STYLE_PRESETS.cyberpunk,
+  fallback: ResolvedThemeAppearance = UI_STYLE_PRESETS.cyberpunk
 ): ResolvedThemeAppearance {
-  const requestedStyle = isUIStylePresetName(appearance?.style)
-    ? appearance.style
-    : fallback.style;
+  const requestedStyle = isUIStylePresetName(appearance?.style) ? appearance.style : fallback.style;
   const preset = UI_STYLE_PRESETS[requestedStyle];
 
   return {
     style: requestedStyle,
-    shape: isOneOf(appearance?.shape, ['square', 'rounded', 'soft']) ? appearance.shape : preset.shape,
+    shape: isOneOf(appearance?.shape, ['square', 'rounded', 'soft'])
+      ? appearance.shape
+      : preset.shape,
     density: isOneOf(appearance?.density, ['compact', 'comfortable', 'spacious'])
       ? appearance.density
       : preset.density,
@@ -460,6 +584,9 @@ export function resolveThemeAppearance(
     motion: isOneOf(appearance?.motion, ['none', 'reduced', 'full'])
       ? appearance.motion
       : preset.motion,
+    blur: isOneOf(appearance?.blur, ['none', 'subtle', 'strong'])
+      ? appearance.blur
+      : preset.blur,
     components: {
       button: isOneOf(appearance?.components?.button, ['outline', 'solid', 'soft'])
         ? appearance.components.button
@@ -478,7 +605,7 @@ export function resolveThemeAppearance(
 }
 
 function isUIStylePresetName(value: unknown): value is UIStylePresetName {
-  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(UI_STYLE_PRESETS, value);
+  return typeof value === 'string' && Object.hasOwn(UI_STYLE_PRESETS, value);
 }
 
 function isOneOf<T extends string>(value: unknown, values: readonly T[]): value is T {

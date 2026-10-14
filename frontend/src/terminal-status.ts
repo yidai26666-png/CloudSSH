@@ -1,5 +1,6 @@
-import { t, type TranslationKey, type TranslationParams } from './i18n';
+import { type TranslationKey, type TranslationParams, t } from './i18n';
 
+// SSH 协议状态事件到 i18n 词条的静态映射表
 const SSH_EVENT_KEYS: Record<string, TranslationKey> = {
   jump_hop_connecting: 'terminal.status.jumpHopConnecting',
   jump_target_connecting: 'terminal.status.jumpTargetConnecting',
@@ -25,6 +26,11 @@ const SSH_EVENT_KEYS: Record<string, TranslationKey> = {
   session_ended: 'terminal.status.sessionEnded',
   remote_closed: 'terminal.status.remoteClosed',
   keepalive_timeout: 'terminal.status.keepaliveTimeout',
+  idle_timeout: 'terminal.status.idleTimeout',
+  session_idle_timeout: 'terminal.status.sessionIdleTimeout',
+  session_idle_warning: 'terminal.status.sessionIdleWarning',
+  input_backlog_closed: 'terminal.status.inputBacklogClosed',
+  output_backlog_closed: 'terminal.status.outputBacklogClosed',
   packet_error: 'terminal.status.packetError',
   algorithm_error: 'terminal.status.algorithmError',
   service_error: 'terminal.status.serviceError',
@@ -46,12 +52,15 @@ const SSH_EVENT_KEYS: Record<string, TranslationKey> = {
   pty_shell_rejected: 'terminal.status.ptyShellRejected',
   send_data_failed: 'terminal.status.sendDataFailed',
   resize_failed: 'terminal.status.resizeFailed',
+  share_session_expired: 'terminal.status.shareSessionExpired',
+  share_expiring_warning: 'terminal.status.shareExpiringWarning',
+  share_audit_unavailable: 'terminal.status.shareAuditUnavailable',
 };
 
 export function localizedSSHMessage(
   message: string,
   event?: string,
-  params: TranslationParams = {},
+  params: TranslationParams = {}
 ): string {
   const key = event ? SSH_EVENT_KEYS[event] : undefined;
   return key ? t(key, params) : message;

@@ -1,11 +1,11 @@
-import { SSHTerminal, SSHConnectionConfig, TerminalSelectionAnchor } from './terminal';
-import { SFTPPanel } from './sftp-panel';
 import { AgentPanel } from './agent/agent-panel';
+import { copyTextToClipboard } from './clipboard';
+import { maskIPAddress } from './host-display';
 import { t } from './i18n';
 import { getNetworkQuality } from './network-quality';
-import { copyTextToClipboard } from './clipboard';
+import { SFTPPanel } from './sftp-panel';
+import { SSHTerminal, type TerminalSelectionAnchor } from './terminal';
 import { notify } from './ui-feedback';
-import { maskIPAddress } from './host-display';
 
 export type TabState = 'connecting' | 'connected' | 'disconnected';
 
@@ -16,7 +16,7 @@ export interface TabInfo {
   sftpPanel: SFTPPanel | null;
   agentPanel: AgentPanel | null;
   containerEl: HTMLElement;
-  hostInfo?: { host: string; port: number; username?: string };
+  hostInfo?: { host: string; port: number; username?: string; serverId?: number };
   state: TabState;
   cfLatency?: number;
   cfColo?: string;
@@ -39,11 +39,28 @@ export class TabManager {
   private tabCounter = 0;
   private _isLoggedIn: boolean = false;
 
+  /** 标签右键菜单的 document click 监听器（关闭菜单时统一移除，防止累积） */
+  private tabCtxCloseHandler: ((e: MouseEvent) => void) | null = null;
+
+  /** 上次渲染的标签 id 集合与活跃 id：入场/激活动画只挂给"新出现"的标签，
+      避免 renderTabBar 全量重建导致状态刷新反复重放动画 */
+  private lastRenderedTabIds: Set<string> = new Set();
+  private lastRenderedActiveId: string | null = null;
+
+  /** 关闭动画进行期间抑制重排：动画结束后由 finish 回调统一补一次渲染 */
+  private renderSuppressed = false;
+
   /** 当所有标签都被关闭时触发，外部可以用它来回到连接页面 */
   private onAllTabsClosed?: () => void;
 
   /** 连接后检测到远端操作系统时触发（用于更新服务器列表图标） */
   private onOSDetected?: (serverId: number, os: string) => void;
+
+  /** 标签数量变化时触发（用于同步返回终端按钮显隐等） */
+  private onTabsChanged?: () => void;
+
+  /** 克隆会话请求回调 */
+  private onDuplicateTab?: (tab: TabInfo) => void;
 
   constructor(tabBarId: string, terminalAreaId: string) {
     this.tabBarEl = document.getElementById(tabBarId)!;
@@ -63,9 +80,20 @@ export class TabManager {
     this.onOSDetected = handler;
   }
 
+  setTabsChangedHandler(handler: () => void): void {
+    this.onTabsChanged = handler;
+  }
+
+  setDuplicateTabHandler(handler: (tab: TabInfo) => void): void {
+    this.onDuplicateTab = handler;
+  }
+
   // ==================== 创建标签 ====================
 
-  createTab(label: string, hostInfo?: { host: string; port: number; username?: string }): TabInfo {
+  createTab(
+    label: string,
+    hostInfo?: { host: string; port: number; username?: string; serverId?: number }
+  ): TabInfo {
     const id = `tab-${++this.tabCounter}-${Date.now()}`;
 
     // 创建终端容器（flex 布局，支持 AgentPanel 右侧分栏）
@@ -129,9 +157,11 @@ export class TabManager {
 
         // 初始化 Agent 面板（仅登录用户）
         if (this._isLoggedIn && !tab.agentPanel) {
-          tab.agentPanel = new AgentPanel(tab.containerEl, true);
+          tab.agentPanel = new AgentPanel(document.body, true, tab.hostInfo?.serverId);
           tab.agentPanel.render();
-          tab.agentPanel.setWebSocketSend((data: string) => tab.terminal.sendWebSocketMessage(data));
+          tab.agentPanel.setWebSocketSend((data: string) =>
+            tab.terminal.sendWebSocketMessage(data)
+          );
           tab.agentPanel.setTerminalFillHandler(
             () => ({
               label: this.getTerminalTargetLabel(tab),
@@ -141,10 +171,14 @@ export class TabManager {
               const activeTab = this.getActiveTab();
               if (activeTab?.id !== tab.id || tab.state !== 'connected') return false;
               return tab.terminal.fillInput(command);
-            },
+            }
           );
           tab.terminal.setAgentFrameHandler((msg: any) => {
             tab.agentPanel?.handleAgentFrame(msg);
+          });
+          // 互斥联动：Agent 打开前自动收起 SFTP 面板
+          tab.agentPanel.setBeforeShowHandler(() => {
+            tab.sftpPanel?.hide();
           });
           // AgentPanel 展开/收起时触发终端重新适配尺寸
           tab.agentPanel.setLayoutChangeHandler(() => tab.terminal.fit());
@@ -196,6 +230,7 @@ export class TabManager {
     });
     this.switchTab(id);
     this.renderTabBar();
+    this.tabsChanged();
 
     return tab;
   }
@@ -205,12 +240,14 @@ export class TabManager {
   switchTab(tabId: string): void {
     const tab = this.tabs.get(tabId);
     if (!tab) return;
+    if (this.activeTabId === tabId) return;
 
-    // 隐藏当前活跃标签的 SFTP 面板
+    // 隐藏当前活跃标签的 SFTP 面板与 Agent 面板
     if (this.activeTabId && this.activeTabId !== tabId) {
       const prevTab = this.tabs.get(this.activeTabId);
       if (prevTab) {
         prevTab.agentPanel?.rejectPendingConfirmation(false);
+        prevTab.agentPanel?.hide();
         prevTab.containerEl.style.display = 'none';
         prevTab.sftpPanel?.hide();
       }
@@ -219,6 +256,7 @@ export class TabManager {
     // 显示目标标签
     tab.containerEl.style.display = 'flex';
     this.activeTabId = tabId;
+    document.body.classList.toggle('agent-panel-open', tab.agentPanel?.isOpen ?? false);
     document.dispatchEvent(new Event('cloudssh:active-terminal-change'));
 
     // Mount 并 fit 终端
@@ -235,6 +273,23 @@ export class TabManager {
   closeTab(tabId: string): void {
     const tab = this.tabs.get(tabId);
     if (!tab) return;
+
+    // 退出动画：挂类并抑制重排，动画结束（或兜底超时）后统一补一次渲染。
+    // 状态清理照旧同步执行，动画只是标签栏视觉层的延迟移除。
+    const tabEl = this.tabBarEl.querySelector(`[data-tab-id="${tabId}"]`);
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    if (tabEl && !reduceMotion) {
+      tabEl.classList.add('tab-item--exit');
+      this.renderSuppressed = true;
+      const finish = () => {
+        if (!this.renderSuppressed) return;
+        this.renderSuppressed = false;
+        this.renderTabBar();
+      };
+      tabEl.addEventListener('animationend', finish, { once: true });
+      // 兜底：motion=none 动画时长归零或动画被禁用时 animationend 可能不触发
+      setTimeout(finish, 260);
+    }
 
     // 清理资源
     if (tab.sftpPanel) {
@@ -256,12 +311,14 @@ export class TabManager {
       if (remaining.length > 0) {
         this.switchTab(remaining[remaining.length - 1]);
       } else {
+        document.body.classList.remove('agent-panel-open');
         this.onAllTabsClosed?.();
       }
     }
 
     this.renderTabBar();
     this.updateSelectionAction();
+    this.tabsChanged();
   }
 
   closeAllTabs(): void {
@@ -281,12 +338,14 @@ export class TabManager {
       tab.terminal.dispose();
       tab.containerEl.remove();
     }
-    
+
     this.tabs.clear();
     this.activeTabId = null;
+    document.body.classList.remove('agent-panel-open');
     this.renderTabBar();
     this.updateSelectionAction();
     this.onAllTabsClosed?.();
+    this.tabsChanged();
   }
 
   // ==================== 获取当前活跃标签 ====================
@@ -302,6 +361,16 @@ export class TabManager {
 
   hasAnyTab(): boolean {
     return this.tabs.size > 0;
+  }
+
+  /** 收起所有标签页的侧边抽屉（SFTP 面板与 AI Agent 面板） */
+  closeAllDrawers(): void {
+    for (const tab of this.tabs.values()) {
+      tab.agentPanel?.rejectPendingConfirmation(false);
+      tab.agentPanel?.hide();
+      tab.sftpPanel?.hide();
+    }
+    document.body.classList.remove('agent-panel-open');
   }
 
   private getTerminalTargetLabel(tab: TabInfo): string {
@@ -349,9 +418,10 @@ export class TabManager {
     const selection = tab?.selectedText || '';
     if (!tab?.agentPanel || !selection.trim()) return false;
 
+    tab.sftpPanel?.hide();
     const attached = tab.agentPanel.attachTerminalSelection(
       selection,
-      this.getTerminalTargetLabel(tab),
+      this.getTerminalTargetLabel(tab)
     );
     if (attached) {
       tab.terminal.clearSelection();
@@ -362,27 +432,45 @@ export class TabManager {
   // ==================== 渲染标签栏 ====================
 
   renderTabBar(): void {
+    if (this.renderSuppressed) return;
     // 保留 new-tab-btn，清除其他标签按钮
     const newTabBtn = this.tabBarEl.querySelector('#new-tab-btn');
-    this.tabBarEl.innerHTML = '';
+    this.tabBarEl.replaceChildren();
 
-    this.tabs.forEach((tab) => {
+    const renderedIds = new Set<string>();
+    for (const tab of this.tabs.values()) {
+      renderedIds.add(tab.id);
       const tabEl = document.createElement('div');
-      tabEl.className = `tab-item${tab.id === this.activeTabId ? ' active' : ''}${tab.state === 'disconnected' ? ' disconnected' : ''}`;
+      const isNew = !this.lastRenderedTabIds.has(tab.id);
+      const isNewlyActive = tab.id === this.activeTabId && this.activeTabId !== this.lastRenderedActiveId;
+      tabEl.className = `tab-item${tab.id === this.activeTabId ? ' active' : ''}${tab.state === 'disconnected' ? ' disconnected' : ''}${isNew ? ' tab-item--enter' : ''}${isNewlyActive ? ' tab-item--activate' : ''}`;
       tabEl.dataset.tabId = tab.id;
 
       // 状态指示点
-      const dotClass = tab.state === 'connected' ? 'tab-dot-connected'
-                      : tab.state === 'connecting' ? 'tab-dot-connecting'
-                      : 'tab-dot-disconnected';
+      const dot = document.createElement('span');
+      dot.className = `tab-dot ${this.tabDotClass(tab.state)}`;
 
-      tabEl.innerHTML = `
-        <span class="tab-dot ${dotClass}"></span>
-        <span class="tab-label">${this.escapeHtml(tab.label)}</span>
-        <button class="tab-close" title="${t('terminal.closeTab')}">
-          <span class="material-symbols-outlined" style="font-size:14px;">close</span>
-        </button>
-      `;
+      const label = document.createElement('span');
+      label.className = 'tab-label';
+      label.textContent = tab.label;
+      label.title = `${t('terminal.doubleClickToRename')}: ${tab.label}`;
+
+      label.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        this.startRenameTab(tab, label);
+      });
+
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'tab-close';
+      closeBtn.title = t('terminal.closeTab');
+      closeBtn.appendChild(this.createIcon('close', '14px'));
+
+      tabEl.append(dot, label, closeBtn);
+
+      tabEl.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        this.showTabContextMenu(tab, e.clientX, e.clientY);
+      });
 
       // 点击标签切换
       tabEl.addEventListener('click', (e) => {
@@ -392,13 +480,13 @@ export class TabManager {
       });
 
       // 关闭按钮
-      tabEl.querySelector('.tab-close')!.addEventListener('click', (e) => {
+      closeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         this.closeTab(tab.id);
       });
 
       this.tabBarEl.appendChild(tabEl);
-    });
+    }
 
     // 追加 new-tab-btn
     if (newTabBtn) {
@@ -408,9 +496,169 @@ export class TabManager {
       btn.id = 'new-tab-btn';
       btn.className = 'tab-new-btn';
       btn.title = t('terminal.newConnection');
-      btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;">add</span>';
+      btn.appendChild(this.createIcon('add', '16px'));
       this.tabBarEl.appendChild(btn);
     }
+
+    this.lastRenderedTabIds = renderedIds;
+    this.lastRenderedActiveId = this.activeTabId;
+  }
+
+  private tabDotClass(state: TabState): string {
+    if (state === 'connected') return 'tab-dot-connected';
+    if (state === 'connecting') return 'tab-dot-connecting';
+    return 'tab-dot-disconnected';
+  }
+
+  // ==================== 标签重命名与右键菜单 ====================
+
+  renameTab(tabId: string, newLabel: string): void {
+    const tab = this.tabs.get(tabId);
+    if (!tab) return;
+    const trimmed = newLabel.trim();
+    if (trimmed) tab.label = trimmed;
+    // 空值/未变更时同样重新渲染，恢复原标签显示（避免重命名输入框卡在标签栏）
+    this.renderTabBar();
+    if (this.activeTabId === tabId) {
+      this.updateStatusBar(tab);
+    }
+  }
+
+  private startRenameTab(tab: TabInfo, labelEl: HTMLElement): void {
+    const currentName = tab.label;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className =
+      'tab-rename-input terminal-input px-1 py-0 text-xs w-28 bg-surface border border-outline-variant';
+    input.value = currentName;
+    input.maxLength = 40;
+
+    let committed = false;
+    const commit = () => {
+      if (committed) return;
+      committed = true;
+      this.renameTab(tab.id, input.value);
+    };
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commit();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        committed = true;
+        this.renderTabBar();
+      }
+    });
+    input.addEventListener('blur', () => commit());
+    input.addEventListener('click', (e) => e.stopPropagation());
+
+    labelEl.replaceWith(input);
+    input.focus();
+    input.select();
+  }
+
+  closeOtherTabs(keepTabId: string): void {
+    for (const tab of Array.from(this.tabs.values())) {
+      if (tab.id !== keepTabId) {
+        this.closeTab(tab.id);
+      }
+    }
+  }
+
+  private showTabContextMenu(tab: TabInfo, x: number, y: number): void {
+    this.hideTabContextMenu();
+
+    const menu = document.createElement('div');
+    menu.id = 'tab-context-menu';
+    menu.className =
+      'fixed z-[100] cyber-box py-1 shadow-2xl text-xs bg-surface border border-outline-variant text-on-surface';
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+
+    const items = [
+      {
+        label: t('terminal.renameTab'),
+        icon: 'edit',
+        action: () => {
+          const tabEl = this.tabBarEl.querySelector(`[data-tab-id="${tab.id}"]`);
+          const labelEl = tabEl?.querySelector('.tab-label') as HTMLElement | null;
+          if (labelEl) this.startRenameTab(tab, labelEl);
+        },
+      },
+      {
+        label: t('terminal.duplicateTab'),
+        icon: 'content_copy',
+        action: () => {
+          this.onDuplicateTab?.(tab);
+        },
+      },
+      {
+        label: t('terminal.closeOtherTabs'),
+        icon: 'close_fullscreen',
+        action: () => {
+          this.closeOtherTabs(tab.id);
+        },
+      },
+      {
+        label: t('terminal.closeTab'),
+        icon: 'close',
+        action: () => {
+          this.closeTab(tab.id);
+        },
+        className: 'text-error',
+      },
+    ];
+
+    for (const item of items) {
+      const itemEl = document.createElement('div');
+      itemEl.className = `flex items-center gap-2 px-3 py-1.5 hover:bg-surface-variant cursor-pointer ${item.className || ''}`;
+      itemEl.appendChild(this.createIcon(item.icon, '14px'));
+      itemEl.appendChild(document.createTextNode(item.label));
+      itemEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.hideTabContextMenu();
+        item.action();
+      });
+      menu.appendChild(itemEl);
+    }
+
+    document.body.appendChild(menu);
+
+    const closeHandler = (e: MouseEvent) => {
+      if (!menu.contains(e.target as Node)) {
+        this.hideTabContextMenu();
+      }
+    };
+    // capture 阶段挂载，确保菜单项等内部 stopPropagation 不影响包含性判断；
+    // setTimeout(0) 避开部分平台 contextmenu 后紧跟的合成 click
+    this.tabCtxCloseHandler = closeHandler;
+    setTimeout(() => document.addEventListener('click', closeHandler, true), 0);
+  }
+
+  private hideTabContextMenu(): void {
+    // 统一移除 document 监听器：菜单项点击（stopPropagation）与外部点击均不残留
+    if (this.tabCtxCloseHandler) {
+      document.removeEventListener('click', this.tabCtxCloseHandler, true);
+      this.tabCtxCloseHandler = null;
+    }
+    const existing = document.getElementById('tab-context-menu');
+    existing?.remove();
+  }
+
+  private createIcon(name: string, size: string): HTMLSpanElement {
+    const icon = document.createElement('span');
+    icon.className = 'material-symbols-outlined';
+    icon.style.fontSize = size;
+    icon.textContent = name;
+    return icon;
+  }
+
+  private setStatusIndicator(el: HTMLElement | null, dotClass: string, text: string): void {
+    if (!el) return;
+    const dot = document.createElement('span');
+    dot.className = `${dotClass} inline-block`;
+    el.replaceChildren(dot, document.createTextNode(text));
   }
 
   // ==================== 状态栏同步 ====================
@@ -426,26 +674,32 @@ export class TabManager {
       if (termHost) {
         const masked = maskIPAddress(tab.hostInfo.host);
         if (masked) {
-          const copyIPLabel = this.escapeAttr(t('terminal.clickToCopyIP'));
-          termHost.innerHTML = `${t('terminal.hostLabel')}<button type="button" class="host-ip-badge" title="${copyIPLabel}" aria-label="${copyIPLabel}">${this.escapeHtml(masked)}</button>`;
-          const badge = termHost.querySelector('.host-ip-badge') as HTMLButtonElement | null;
-          if (badge) {
-            badge.addEventListener('click', async () => {
-              const ok = await copyTextToClipboard(tab.hostInfo!.host);
-              if (ok) {
-                badge.classList.add('host-ip-copied');
-                setTimeout(() => badge.classList.remove('host-ip-copied'), 800);
-                notify(t('terminal.ipCopied'), { variant: 'success', duration: 1500 });
-              } else {
-                notify(t('terminal.ipCopyFailed'), { variant: 'danger' });
-              }
-            });
-          }
+          const copyIPLabel = t('terminal.clickToCopyIP');
+          const badge = document.createElement('button');
+          badge.type = 'button';
+          badge.className = 'host-ip-badge';
+          badge.title = copyIPLabel;
+          badge.setAttribute('aria-label', copyIPLabel);
+          badge.textContent = masked;
+          termHost.replaceChildren(document.createTextNode(t('terminal.hostLabel')), badge);
+          badge.addEventListener('click', async () => {
+            const ok = await copyTextToClipboard(tab.hostInfo!.host);
+            if (ok) {
+              badge.classList.add('host-ip-copied');
+              setTimeout(() => badge.classList.remove('host-ip-copied'), 800);
+              notify(t('terminal.ipCopied'), { variant: 'success', duration: 1500 });
+            } else {
+              notify(t('terminal.ipCopyFailed'), { variant: 'danger' });
+            }
+          });
         } else {
           termHost.textContent = t('terminal.host', { value: tab.hostInfo.host });
         }
       }
-      if (termUser) termUser.textContent = tab.hostInfo.username ? t('terminal.user', { value: tab.hostInfo.username }) : '';
+      if (termUser)
+        termUser.textContent = tab.hostInfo.username
+          ? t('terminal.user', { value: tab.hostInfo.username })
+          : '';
       if (termPort) termPort.textContent = t('terminal.port', { value: tab.hostInfo.port });
     } else {
       if (termHost) termHost.textContent = t('terminal.server', { value: tab.label });
@@ -454,34 +708,60 @@ export class TabManager {
     }
 
     if (tab.state === 'connected') {
-      if (termStatus) termStatus.innerHTML = `<div class="w-2 h-2 bg-primary-container"></div> ${t('terminal.connected')}`;
-      if (statusText) statusText.innerHTML = `<span class="w-2 h-2 bg-[var(--accent)] inline-block animate-pulse"></span> ${t('auth.statusOnline')}`;
+      this.setStatusIndicator(termStatus, 'w-2 h-2 bg-primary-container', t('terminal.connected'));
+      this.setStatusIndicator(
+        statusText,
+        'w-2 h-2 bg-[var(--accent)] animate-pulse',
+        t('auth.statusOnline')
+      );
     } else if (tab.state === 'connecting') {
-      if (termStatus) termStatus.innerHTML = `<div class="w-2 h-2 bg-primary-container animate-pulse"></div> ${t('terminal.connecting')}`;
+      this.setStatusIndicator(
+        termStatus,
+        'w-2 h-2 bg-primary-container animate-pulse',
+        t('terminal.connecting')
+      );
     } else {
-      if (termStatus) termStatus.innerHTML = `<div class="w-2 h-2 bg-[var(--error)]"></div> ${t('terminal.disconnected')}`;
-      if (statusText) statusText.innerHTML = `<span class="w-2 h-2 bg-surface-dot inline-block"></span> ${t('auth.statusOffline')}`;
+      this.setStatusIndicator(termStatus, 'w-2 h-2 bg-[var(--error)]', t('terminal.disconnected'));
+      this.setStatusIndicator(statusText, 'w-2 h-2 bg-surface-dot', t('auth.statusOffline'));
     }
 
     // 更新状态栏显示延迟信息
     const termInfo = document.getElementById('term-info');
     if (termInfo) {
       if (tab.state === 'connected') {
-        const latencyItems: string[] = [];
+        const latencyItems: { label: string; quality: string }[] = [];
         if (tab.cfLatency !== undefined) {
-          const quality = getNetworkQuality(tab.cfLatency, 'cf');
-          latencyItems.push(
-            `<span class="network-latency-item"><span class="network-quality-dot network-quality-${quality}" aria-hidden="true"></span>CF-${this.escapeHtml(tab.cfColo || 'UNK')}: ${tab.cfLatency}ms</span>`,
-          );
+          latencyItems.push({
+            label: `CF-${tab.cfColo || 'UNK'}: ${tab.cfLatency}ms`,
+            quality: getNetworkQuality(tab.cfLatency, 'cf'),
+          });
         }
         if (tab.wsLatency !== undefined) {
-          const quality = getNetworkQuality(tab.wsLatency, 'ws');
-          latencyItems.push(
-            `<span class="network-latency-item"><span class="network-quality-dot network-quality-${quality}" aria-hidden="true"></span>RTT: ${tab.wsLatency}ms</span>`,
-          );
+          latencyItems.push({
+            label: `RTT: ${tab.wsLatency}ms`,
+            quality: getNetworkQuality(tab.wsLatency, 'ws'),
+          });
         }
         if (latencyItems.length > 0) {
-          termInfo.innerHTML = `⚡ ${latencyItems.join('<span class="network-latency-separator" aria-hidden="true">|</span>')}`;
+          const fragment = document.createDocumentFragment();
+          fragment.appendChild(document.createTextNode('⚡ '));
+          for (const [index, item] of latencyItems.entries()) {
+            if (index > 0) {
+              const separator = document.createElement('span');
+              separator.className = 'network-latency-separator';
+              separator.setAttribute('aria-hidden', 'true');
+              separator.textContent = '|';
+              fragment.appendChild(separator);
+            }
+            const itemEl = document.createElement('span');
+            itemEl.className = 'network-latency-item';
+            const dot = document.createElement('span');
+            dot.className = `network-quality-dot network-quality-${item.quality}`;
+            dot.setAttribute('aria-hidden', 'true');
+            itemEl.append(dot, document.createTextNode(item.label));
+            fragment.appendChild(itemEl);
+          }
+          termInfo.replaceChildren(fragment);
         } else {
           termInfo.textContent = '';
         }
@@ -495,13 +775,13 @@ export class TabManager {
     const button = document.getElementById('ask-ai-selection-btn');
     if (!button) return;
     const visible = !!(
-      this._isLoggedIn
-      && tab
-      && tab.id === this.activeTabId
-      && tab.state === 'connected'
-      && tab.agentPanel
-      && tab.selectedText.trim()
-      && tab.selectionAnchor
+      this._isLoggedIn &&
+      tab &&
+      tab.id === this.activeTabId &&
+      tab.state === 'connected' &&
+      tab.agentPanel &&
+      tab.selectedText.trim() &&
+      tab.selectionAnchor
     );
     button.classList.toggle('hidden', !visible);
     if (!visible || !tab?.selectionAnchor) return;
@@ -524,15 +804,7 @@ export class TabManager {
     button.style.top = `${Math.max(terminalBounds.top + viewportPadding, top)}px`;
   }
 
-  // ==================== 工具函数 ====================
-
-  private escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  private escapeAttr(text: string): string {
-    return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  private tabsChanged(): void {
+    this.onTabsChanged?.();
   }
 }

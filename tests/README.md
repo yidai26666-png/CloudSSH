@@ -9,17 +9,34 @@ tests/
 ├── build/                         # 生产构建、可复现性和原生弹窗回归
 ├── e2e/                           # Chromium 浏览器交互与 axe 无障碍检查
 ├── ssh/                           # SSH 算法、认证、加密、KEX、Packet 与测试密钥夹具
-├── worker/                        # Worker 路由、安全、DNS、UserDB 与标签测试
-├── agent-code-actions.test.ts     # Agent 代码块复制/填入规则
+├── worker/                        # Worker 路由、安全、DNS、UserDB、标签与 Cloudflare 隧道测试
+├── agent-code-actions.test.ts # Agent 代码块语言归一化与单行 Shell 命令识别
 ├── agent-terminal-selection.test.ts # 终端选区附件和非授权安全边界
+├── api-errors.test.ts          # API 错误信息边界与状态码
+├── auth-challenge-dialog.test.ts # RFC 4256 认证挑战对话框交互
 ├── clipboard.test.ts              # Clipboard API 与旧版复制回退
-├── frontend-ux.test.ts            # 前端关键交互源码回归
-├── i18n.test.ts                   # 中英文词条和语言解析
+├── editor-content.test.ts         # 在线编辑内容解码、BOM/换行符与嗅探
+├── frontend-ux.test.ts            # 前端纯函数逻辑回归（OS 图标/列表排序过滤/字号/端口/网络质量）
+├── host-display.test.ts           # IPv4/IPv6 掩码与完整地址复制
+├── i18n.test.ts                   # 多语言词条和语言解析（zh-CN / zh-TW / en-US）
+├── known-hosts.test.ts            # 已知主机指纹 TOFU 信任与变更流程
+├── mobile-input.test.ts           # iOS IME diff 与一次性修饰键帮助函数
+├── server-memory-schema.test.ts   # 统一服务器记忆（工作历程/知识实体）校验与持久化格式
+├── sftp-dialogs.test.ts           # SFTP 新建/重命名/删除弹窗与名称校验
+├── sftp-helpers.test.ts           # SFTP 面包屑解析、多维排序与格式化
+├── sftp-panel.test.ts             # SFTP 面包屑与路径状态回归
 ├── sftp-selection.test.ts         # SFTP 单选、多选、连选和全选模型
+├── sftp-transfer.test.ts          # SFTP 传输控制器与异步原语
+├── share-session.test.ts          # 分享会话确认/领取幂等与页面状态
+├── snippet-local-store.test.ts    # 匿名命令片段 localStorage 存储与限额
+├── snippet-manager.test.ts        # 命令片段搜索过滤与一键复制交互
+├── snippet-schema.test.ts         # 片段名称/命令/数量校验与规范化
+├── snippet-variables.test.ts      # 命令片段 {{var}} 参数占位符提取与替换
+├── terminal-shortcuts.test.ts     # 终端快捷键（Cmd+F 搜索、Cmd+K 清屏）
+├── terminal-size.test.ts          # 终端尺寸归一化与范围越界校验
 ├── terminal-status.test.ts        # SSH 状态事件翻译
 ├── terminal-text.test.ts          # 终端文本处理
 ├── theme.test.ts                  # 内置/自定义主题
-├── types.test.ts                  # 共享类型和终端尺寸边界
 └── README.md
 ```
 
@@ -48,6 +65,12 @@ pnpm run test:e2e
 pnpm run verify
 ```
 
+> **测试类型检查**：`pnpm run typecheck` 的 worker 阶段会依次执行
+> `tsc --noEmit`（src）、`tsc -p tests/tsconfig.worker.json`（tests/worker|ssh|build，
+> workers-types 环境）与 `tsc -p tests/tsconfig.frontend.json`（tests 根目录 *.test.ts + e2e，
+> DOM 环境）。两个测试配置分开的原因：`@cloudflare/workers-types` 声明的基础 DOM 接口
+> （如 Element.append）与 DOM lib 合并冲突，不能在同一项目里同时加载。
+
 ## 当前覆盖范围
 
 ### SSH 协议
@@ -64,28 +87,49 @@ pnpm run verify
 - Origin 检查、端口范围、连接令牌和错误信息边界
 - IPv4/IPv6 保留地址、DoH 解析与 DNS rebinding 防护
 - Agent 危险命令拦截、确认规则和 SSRF URL 校验
-- UserDB 服务器标签迁移、规范化、序列化和更新
+- 主机密钥信任：首见指纹确认、更换指纹阻断与路由作用域隔离
+- 键盘交互认证、OS 检测、跳板链、SFTP 上传冲突、分享会话策略
+- UserDB 服务器标签/片段迁移、规范化、序列化、更新与隔离
+- AI 模型代理安全：同 Base URL 强绑定免密拉取、跨地址凭据外带拦截（Credential Exfiltration）、CSRF Origin 防护与敏感 Token 脱敏
+- Responses 原生无状态 Agent：HTTP/SSE 跨 chunk 与 CRLF、强制无状态（store: false）、原生输出项与通用 reasoning 节点回传、call_id 配对、执行事实日志（ExecutionJournal）、严格本地参数校验、停止/抢占/重置/编辑分支、原子预算检查点、任务相关性服务器记忆与 usage
+- 流中断/incomplete 不执行残缺工具、不泄露 reasoning；新任务先等旧 exec 清理，不自动重放已执行命令
 
 ### 前端与构建
 
-- 服务器搜索、标签筛选和每页 9 项分页
+- 服务器搜索、标签筛选、配置一键克隆（Duplicate Server）和响应式分页（桌面 6 / 平板 6 / 移动 3）
+- 终端多标签：双击内联重命名（空值还原）、右键上下文菜单（重命名/克隆会话/关闭其他/关闭）与 document click 防泄漏
+- 终端快捷键适配：macOS `Cmd+F` 搜索、`Cmd+K` / `Ctrl+Shift+K` 清屏且不干扰 Shell 原生 `Ctrl+K`
+- 命令片段库：实时模糊搜索、一键复制到剪贴板与 `{{var}}` 动态参数占位符弹窗录入
+- SFTP 生产力：路径面包屑分级导航、表头多维排序（文件名/大小/时间）、新建 0 字节文件与 CodeMirror 在线编辑联动
 - SFTP 单选、Cmd/Ctrl 多选、Shift 连选和全选
-- Agent 终端选区附件、问题组合和非授权安全边界
+- Agent 终端选区附件、问题组合、快捷诊断 Prompt 气泡（Chips）和非授权安全边界
 - 终端选区自动复制、指针取消和旧版复制回退
-- i18n、主题、终端状态和文本处理
+- i18n、Theme V4 主题（Liquid Glass 液态玻璃外观预设、背景/效果/版式、对比度与 schema）、终端状态/文本、已知主机与片段本地存储
+- 终端与用户空间液态分段切换器（Liquid Segmented Controls）：双边异步物理弹簧引擎、液态透镜滑块拉伸与泊位、桌面专属分段条与移动端菜单平行入口互斥联动
+- AI 配置与模型选择：自定义 Combobox 下拉组件（全量展开、即时过滤、一键清空、多主题自适应）、免密拉取联动与敏感凭证即时清理
 - 构建可复现性、xterm 生产构建兼容和原生弹窗禁用
 
 ### 浏览器 E2E
 
 - 匿名连接表单 axe 检查
 - 服务器弹窗的基本对话框语义、初始焦点和 Escape 关闭
-- 服务器标签筛选与分页
-- Agent 终端选区附件
+- 服务器标签筛选、分页与配置快速克隆
+- 多标签操作：双击内联重命名、空值与失焦恢复、右键菜单项与外部点击关闭
+- Agent 终端选区附件与快捷诊断 Prompt 气泡点击填入
+- Responses 前端任务生命周期：正文结束继续运行、run_end 才结束、requestId 隔离过期帧、中文/繁中/英文错误与留存提示
 - 终端选区复制与焦点恢复
+- 认证挑战对话框、iOS 输入法、移动端后台连接恢复与分享会话领取
+- SFTP 覆盖确认、路径面包屑、表头排序、新建文件、主题样式与 UI 回归
+- 终端抽屉分段切换器：桌面端胶囊轮廓与可辨识边缘、双边异步物理弹簧滑块位移、PC 隐藏移动端更多操作按钮、三大抽屉宽度统一、匿名模式隐藏 AI Agent（display: none）与登录同步解锁
+- 移动端终端交互与用户空间：紧凑顶栏与菜单入口、视口与软键盘动态适配、单指滑动历史、字号响应式断点、移动端抽屉平行入口与 AI 设置弹窗无横向溢出
+- tmux 触摸滚轮（`terminal-touch-scroll.spec.ts`，Chromium + WebKit）：VT200/drag/any 与 SGR/旧式二进制/像素编码、双向滚动、原始面板坐标、Ctrl 状态保留、Shell/连接门控、选区优先、取消/模式切换/断连清理与报文数量上限
+- 终端焦点报告（`terminal-focus-report.spec.ts`，Chromium + WebKit）：真实 Ctrl/Alt 按钮与焦点切换、DECSET 1004、Ctrl+B/方向键、bracketed paste、Shell/连接门控及 iOS IME 回退/去重
+- UI 与样式回归：Liquid Glass 下 AI 模型下拉面板与设置面板滚动能力（overflow 简写防回归）、窄视口弹窗横向溢出消除、主题化滚动条兜底与 .no-scrollbar 样式
+- AI 模型下拉选择（Combobox 展开、选项切换、清空、免密拉取与浅色/暗色主题自适应切换）
 
 ## 当前限制
 
-- Playwright 的完整界面与无障碍回归主要运行 Chromium；认证挑战、iOS 输入法和移动端后台连接恢复另在 WebKit 设备项目中执行。Firefox 尚未纳入当前质量门禁。
+- Playwright 的完整界面与无障碍回归主要运行 Chromium；认证挑战、iOS 输入法、移动端后台连接恢复、SFTP 面板操作、终端触摸滚轮和焦点报告另在 WebKit 设备项目中执行。Firefox 尚未纳入当前质量门禁。
 - 浏览器 E2E 主要通过 mock API 验证前端行为，尚未连接真实 OpenSSH/Dropbear 和 SFTP 服务。
 - SSHSessionDO、SSH 会话状态机、SFTP 数据流和 AgentCore 等运行态模块的覆盖率仍偏低。
 - 新增协议状态、WebSocket 消息或安全边界时，应优先补充运行时错误、取消、超时和畸形输入测试，而不仅验证成功路径。

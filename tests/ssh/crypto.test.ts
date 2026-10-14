@@ -1,9 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
-  SSHAESGCMCipher,
-  SSHAESCTRCipher,
-  SSHHMAC,
+  base64UrlEncodeUnsigned,
+  convertSSHECDSASig,
   REKEY_THRESHOLD,
+  SSHAESCTRCipher,
+  SSHAESGCMCipher,
+  SSHHMAC,
   shouldRekey,
 } from '../../src/ssh/crypto';
 
@@ -212,7 +214,10 @@ describe('crypto — SSHAESGCMCipher', () => {
       // 这在 GCM 下是 catastrophic failure。这里断言两次密文不同。
       let eq = true;
       for (let i = 0; i < c1.length; i++) {
-        if (c1[i] !== c2[i]) { eq = false; break; }
+        if (c1[i] !== c2[i]) {
+          eq = false;
+          break;
+        }
       }
       expect(eq).toBe(false);
     });
@@ -254,7 +259,10 @@ describe('crypto — SSHAESGCMCipher', () => {
       const c2 = enc.encrypt ? await enc.encrypt(plaintext) : plaintext;
       let eq = true;
       for (let i = 0; i < c1.length; i++) {
-        if (c1[i] !== c2[i]) { eq = false; break; }
+        if (c1[i] !== c2[i]) {
+          eq = false;
+          break;
+        }
       }
       expect(eq).toBe(false);
     });
@@ -398,7 +406,10 @@ describe('crypto — SSHAESCTRCipher', () => {
       // counter 自增后两次密文必须不同
       let eq = true;
       for (let i = 0; i < c1.length; i++) {
-        if (c1[i] !== c2[i]) { eq = false; break; }
+        if (c1[i] !== c2[i]) {
+          eq = false;
+          break;
+        }
       }
       expect(eq).toBe(false);
     });
@@ -524,7 +535,9 @@ describe('crypto — SSHHMAC', () => {
     });
     it('init 之前调用 verify 抛错', async () => {
       const m = new SSHHMAC('hmac-sha2-256', randomBytes(32));
-      await expect(m.verify(randomBytes(10), 1, randomBytes(32))).rejects.toThrow(/not initialized/);
+      await expect(m.verify(randomBytes(10), 1, randomBytes(32))).rejects.toThrow(
+        /not initialized/
+      );
     });
   });
 
@@ -607,6 +620,49 @@ describe('crypto — SSHHMAC', () => {
       const packet = randomBytes(4096);
       const tag = await mac.sign(packet, 999);
       expect(await mac.verify(packet, 999, tag)).toBe(true);
+    });
+  });
+
+  describe('base64UrlEncodeUnsigned', () => {
+    it('剥离前导零字节并进行 URL 安全的 Base64 编码', () => {
+      const bytesWithLeadingZero = new Uint8Array([0x00, 0x00, 0x01, 0x02]);
+      const encoded = base64UrlEncodeUnsigned(bytesWithLeadingZero);
+      expect(encoded).toBe('AQI');
+    });
+
+    it('不包含 URL 不安全字符 + / =', () => {
+      const bytes = new Uint8Array([0xfb, 0xff, 0xfe]);
+      const encoded = base64UrlEncodeUnsigned(bytes);
+      expect(encoded).not.toContain('+');
+      expect(encoded).not.toContain('/');
+      expect(encoded).not.toContain('=');
+    });
+  });
+
+  describe('convertSSHECDSASig', () => {
+    it('解析 SSH ECDSA 签名的 r 和 s 并填充为指定坐标字节宽度的原始格式', () => {
+      const r = new Uint8Array(32).fill(0x11);
+      const s = new Uint8Array(32).fill(0x22);
+      const sshSig = new Uint8Array(4 + 32 + 4 + 32);
+      let offset = 0;
+      // rLen
+      sshSig[offset++] = 0;
+      sshSig[offset++] = 0;
+      sshSig[offset++] = 0;
+      sshSig[offset++] = 32;
+      sshSig.set(r, offset);
+      offset += 32;
+      // sLen
+      sshSig[offset++] = 0;
+      sshSig[offset++] = 0;
+      sshSig[offset++] = 0;
+      sshSig[offset++] = 32;
+      sshSig.set(s, offset);
+
+      const raw = convertSSHECDSASig(sshSig, 32);
+      expect(raw.length).toBe(64);
+      expect(raw.subarray(0, 32)).toEqual(r);
+      expect(raw.subarray(32, 64)).toEqual(s);
     });
   });
 });

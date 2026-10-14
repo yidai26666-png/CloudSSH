@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { isBlockedCommand, needsConfirmation } from '../../../src/worker/agent/safety';
 
 describe('safety — isBlockedCommand (黑名单极度危险操作)', () => {
@@ -58,7 +58,7 @@ describe('safety — needsConfirmation (高风险操作需要确认)', () => {
       'dd if=a of=b',
       'iptables -F',
       'ufw disable',
-      'sudo rm file'
+      'sudo rm file',
     ];
     for (const cmd of dangerousCommands) {
       const r = needsConfirmation(cmd);
@@ -86,6 +86,45 @@ describe('safety — needsConfirmation (高风险操作需要确认)', () => {
     }
   });
 
+  it.each([
+    'eval "rm -rf /"',
+    'true;eval "$payload"',
+    'sh -c "rm -rf /"',
+    '/bin/bash -lc "$payload"',
+    'printf cm0gLXJmIC8= | base64 -d|sh',
+    'base64 -d script.b64 | /usr/bin/dash',
+    'rm${IFS}-rf${IFS}/',
+    'rm$IFS-rf$IFS/',
+    'rm${IFS%?}-rf${IFS}/',
+    'python3 -c "import os; os.system(command)"',
+    '/usr/bin/python3.12 script.py',
+    'perl -e "$payload"',
+    'ruby -e "$payload"',
+    'node --eval "$payload"',
+    'php -r "$payload"',
+    'lua -e "$payload"',
+    'awk \'BEGIN {system(command)}\'',
+    'cat script | python3',
+    'source /tmp/script.sh',
+    '. /tmp/script.sh',
+    'busybox sh -c "$payload"',
+    'env bash -c "$payload"',
+    'sudo -u root /bin/bash -c "$payload"',
+    'docker exec container sh -c "$payload"',
+    'printf script | xargs sh -c',
+    'find /tmp -exec python3 -c "$payload" \\;',
+  ])('动态执行或混淆命令必须进入确认层：%s', (command) => {
+    expect(needsConfirmation(command).required).toBe(true);
+  });
+
+  it('实测绕过不再直接放行，直接根目录删除仍然阻断', () => {
+    for (const command of ['eval "rm -rf /"', 'base64 -d|sh', 'rm${IFS}-rf${IFS}/']) {
+      expect(isBlockedCommand(command).blocked).toBe(false);
+      expect(needsConfirmation(command).required).toBe(true);
+    }
+    expect(isBlockedCommand('rm -rf /').blocked).toBe(true);
+  });
+
   it('一般的命令、查询、安装操作应当由 AI 大脑自己判断，底层免确认', () => {
     const safeCommands = [
       'ls -la',
@@ -99,7 +138,11 @@ describe('safety — needsConfirmation (高风险操作需要确认)', () => {
       'curl http://example.com',
       'echo "hello" > test.txt',
       'docker run nginx',
-      'sudo tail -f /var/log/syslog'
+      'sudo tail -f /var/log/syslog',
+      'base64 -d file.b64',
+      'echo evaluation shells pythonic',
+      'cat /etc/hosts | grep bashrc',
+      'ls /usr/bin/python-tools',
     ];
     for (const cmd of safeCommands) {
       const r = needsConfirmation(cmd);

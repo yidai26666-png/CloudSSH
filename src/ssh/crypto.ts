@@ -53,30 +53,57 @@ export class SSHAESGCMCipher {
     return algorithm;
   }
 
-  async encrypt(plaintext: Uint8Array, _seqNum?: number, aad?: Uint8Array, _commit: boolean = true): Promise<Uint8Array> {
+  async encrypt(
+    plaintext: Uint8Array,
+    _seqNum?: number,
+    aad?: Uint8Array,
+    _commit: boolean = true
+  ): Promise<Uint8Array> {
     if (!this.key) throw new Error('Cipher not initialized');
     const algorithm = this.getAlgorithm(aad);
 
+    // SAFETY: getAlgorithm 返回的算法对象仅含 AesGcmParams 支持的分段；
+    // WebCrypto 类型签名过窄，运行时与 TS 均接受该形状
     const encrypted = new Uint8Array(
-      await crypto.subtle.encrypt(algorithm as unknown as SubtleCryptoEncryptAlgorithm, this.key, plaintext)
+      await crypto.subtle.encrypt(
+        algorithm as unknown as SubtleCryptoEncryptAlgorithm,
+        this.key,
+        plaintext
+      )
     );
 
     this.incIV();
     return encrypted;
   }
 
-  async decrypt(ciphertext: Uint8Array, _seqNum?: number, aad?: Uint8Array, _commit: boolean = true): Promise<Uint8Array | null> {
+  async decrypt(
+    ciphertext: Uint8Array,
+    _seqNum?: number,
+    aad?: Uint8Array,
+    _commit: boolean = true
+  ): Promise<Uint8Array | null> {
     if (!this.key) throw new Error('Cipher not initialized');
     const algorithm = this.getAlgorithm(aad);
 
     try {
+      // SAFETY: getAlgorithm 返回的算法对象仅含 AesGcmParams 支持的分段；
+      // WebCrypto 类型签名过窄，运行时与 TS 均接受该形状
       const decrypted = new Uint8Array(
-        await crypto.subtle.decrypt(algorithm as unknown as SubtleCryptoEncryptAlgorithm, this.key, ciphertext)
+        await crypto.subtle.decrypt(
+          algorithm as unknown as SubtleCryptoEncryptAlgorithm,
+          this.key,
+          ciphertext
+        )
       );
       this.incIV();
       return decrypted;
     } catch (e) {
-      console.error('[CRYPTO] Decrypt failed, ciphertextLen:', ciphertext?.length, 'error:', e instanceof Error ? e.message : String(e));
+      console.error(
+        '[CRYPTO] Decrypt failed, ciphertextLen:',
+        ciphertext?.length,
+        'error:',
+        e instanceof Error ? e.message : String(e)
+      );
       return null;
     }
   }
@@ -115,7 +142,12 @@ export class SSHAESCTRCipher {
     }
   }
 
-  async encrypt(plaintext: Uint8Array, _seqNum?: number, _aad?: Uint8Array, commit: boolean = true): Promise<Uint8Array> {
+  async encrypt(
+    plaintext: Uint8Array,
+    _seqNum?: number,
+    _aad?: Uint8Array,
+    commit: boolean = true
+  ): Promise<Uint8Array> {
     if (!this.key) throw new Error('Cipher not initialized');
     const counter = new Uint8Array(this.counter);
     const encrypted = new Uint8Array(
@@ -131,7 +163,12 @@ export class SSHAESCTRCipher {
     return encrypted;
   }
 
-  async decrypt(ciphertext: Uint8Array, _seqNum?: number, _aad?: Uint8Array, commit: boolean = true): Promise<Uint8Array | null> {
+  async decrypt(
+    ciphertext: Uint8Array,
+    _seqNum?: number,
+    _aad?: Uint8Array,
+    commit: boolean = true
+  ): Promise<Uint8Array | null> {
     if (!this.key) throw new Error('Cipher not initialized');
     const counter = new Uint8Array(this.counter);
     try {
@@ -147,7 +184,12 @@ export class SSHAESCTRCipher {
       }
       return decrypted;
     } catch (e) {
-      console.error('[CRYPTO] AES-CTR decrypt failed, ciphertextLen:', ciphertext?.length, 'error:', e instanceof Error ? e.message : String(e));
+      console.error(
+        '[CRYPTO] AES-CTR decrypt failed, ciphertextLen:',
+        ciphertext?.length,
+        'error:',
+        e instanceof Error ? e.message : String(e)
+      );
       return null;
     }
   }
@@ -200,4 +242,51 @@ export const REKEY_THRESHOLD = 1 << 30;
 
 export function shouldRekey(seqNum: number): boolean {
   return seqNum >= REKEY_THRESHOLD;
+}
+
+/**
+ * 将 Uint8Array 编码为 base64url 字符串，去除前导零字节（用于 JWK mpint 格式）。
+ */
+export function base64UrlEncodeUnsigned(buffer: Uint8Array): string {
+  let start = 0;
+  while (start < buffer.length - 1 && buffer[start] === 0x00) {
+    start++;
+  }
+  let binary = '';
+  for (let i = start; i < buffer.length; i++) {
+    binary += String.fromCharCode(buffer[i]);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * 将 SSH ECDSA 签名（包含 r 和 s 两个 mpint 格式字符串）转换为 Web Crypto 所需的原始拼接字节。
+ */
+export function convertSSHECDSASig(sshSig: Uint8Array, coordBytes: number = 32): Uint8Array {
+  let offset = 0;
+  const rLen =
+    (sshSig[offset] << 24) |
+    (sshSig[offset + 1] << 16) |
+    (sshSig[offset + 2] << 8) |
+    sshSig[offset + 3];
+  offset += 4;
+  let r = sshSig.subarray(offset, offset + rLen);
+  offset += rLen;
+  const sLen =
+    (sshSig[offset] << 24) |
+    (sshSig[offset + 1] << 16) |
+    (sshSig[offset + 2] << 8) |
+    sshSig[offset + 3];
+  offset += 4;
+  let s = sshSig.subarray(offset, offset + sLen);
+
+  // Strip leading zero bytes (mpint sign extension)
+  if (r.length > coordBytes && r[0] === 0) r = r.subarray(1);
+  if (s.length > coordBytes && s[0] === 0) s = s.subarray(1);
+
+  // Pad to coordBytes each (P-256=32, P-384=48, P-521=66)
+  const result = new Uint8Array(coordBytes * 2);
+  result.set(r, coordBytes - r.length);
+  result.set(s, coordBytes * 2 - s.length);
+  return result;
 }

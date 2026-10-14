@@ -261,7 +261,7 @@
       font-size: 11px;
     }
 
-    .setting-row input,
+    .setting-row input:not([type='range']),
     .setting-row select {
       width: 100%;
       min-width: 0;
@@ -272,6 +272,16 @@
       font-size: 11px;
       padding: 6px 8px;
       outline: none;
+    }
+
+    .setting-row:has(input[type='range']) {
+      grid-template-columns: minmax(110px, 1fr) minmax(96px, 1fr) 44px;
+    }
+
+    .setting-row .range-value {
+      font-size: 11px;
+      color: var(--editor-muted);
+      text-align: right;
     }
 
     .setting-row input:focus,
@@ -365,6 +375,58 @@
       --hover-lift: -2px;
       font-family: var(--font-ui);
       font-size: calc(1em * var(--font-size-scale));
+      position: relative;
+      isolation: isolate;
+      background-color: var(--bg);
+      background-image: var(--app-bg-stack, none);
+    }
+
+    /* V3：预览背景漂移（motion=none 时显式停止） */
+    .theme-scope[data-bg-animation='drift'] {
+      background-size: 200% 200%;
+      animation: theme-editor-bg-drift 40s ease-in-out infinite alternate;
+    }
+
+    .theme-scope[data-ui-motion='none'] {
+      animation: none;
+    }
+
+    @keyframes theme-editor-bg-drift {
+      0% {
+        background-position: 0% 0%;
+      }
+      100% {
+        background-position: 100% 100%;
+      }
+    }
+
+    /* V3：预览噪点层（垫在内容之下，仅作用于背景） */
+    .theme-scope[data-fx-noise='on']::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      opacity: var(--fx-noise-opacity, 0.05);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='en'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23en)'/%3E%3C/svg%3E");
+    }
+
+    /* V3：表面模糊档位（后置覆盖 shadow 派生值） */
+    .theme-scope[data-ui-blur='none'] {
+      --surface-blur: 0px;
+    }
+
+    .theme-scope[data-ui-blur='subtle'] {
+      --surface-blur: 6px;
+    }
+
+    .theme-scope[data-ui-blur='strong'] {
+      --surface-blur: 16px;
+    }
+
+    /* V3：预览辉光 */
+    .theme-scope[data-fx-glow='on'] .server-card {
+      box-shadow: var(--shadow-card), 0 4px calc(24px * var(--fx-glow-strength, 0.6)) var(--accent-glow);
     }
 
     .theme-scope[data-ui-shape="square"] {
@@ -589,10 +651,17 @@
       display: none;
     }
 
-    .theme-scope[data-ui-style="standard"] :is(.scanlines, .scanline, .flicker),
-    .theme-scope[data-ui-style="soft"] :is(.scanlines, .scanline, .flicker),
-    .theme-scope[data-ui-style="dense"] :is(.scanlines, .scanline, .flicker) {
+    .theme-scope:not([data-fx-scanline='on']) :is(.scanlines, .scanline),
+    .theme-scope:not([data-fx-flicker='on']) .flicker {
       display: none;
+    }
+
+    .theme-scope[data-fx-scanline='on'] .scanlines {
+      opacity: var(--fx-scanline-opacity, 1);
+    }
+
+    .theme-scope[data-fx-flicker='on'] .flicker {
+      animation-duration: var(--fx-flicker-speed, 0.15s);
     }
 
     .theme-scope[data-ui-motion="none"] * {
@@ -2115,8 +2184,7 @@
           <option value="standard-dark">Standard Dark</option>
           <option value="standard-light">Standard Light</option>
           <option value="cyberpunk" selected>Cyberpunk</option>
-          <option value="glacier">Glacier</option>
-          <option value="gruvbox">Gruvbox</option>
+          <option value="liquid-glass">Liquid Glass</option>
         </select>
         <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
       </div>
@@ -2400,8 +2468,7 @@
                   <option value="standard-dark">Standard Dark</option>
                   <option value="standard-light">Standard Light</option>
                   <option value="cyberpunk" selected>Cyberpunk</option>
-                  <option value="glacier">Glacier</option>
-                  <option value="gruvbox">Gruvbox</option>
+                  <option value="liquid-glass">Liquid Glass</option>
                 </select>
                 <span class="material-symbols-outlined terminal-tool-icon">upload_file</span>
                 <span class="material-symbols-outlined terminal-tool-icon">folder_open</span>
@@ -2634,6 +2701,7 @@ const TRANSLATIONS = {
   'zh-CN': {
     'page.title': 'CloudSSH 主题在线编辑器',
     'language.zhCN': '简体中文',
+    'language.zhTW': '繁體中文',
     'language.enUS': 'English',
     'language.switchTo': '切换到{language}',
     'editor.title': '主题在线编辑器',
@@ -2714,6 +2782,23 @@ const TRANSLATIONS = {
     'group.basic': '主题信息',
     'group.appearance': '整体外观',
     'group.componentStyles': '组件样式',
+    'group.themeV3Background': '背景层（V3）',
+    'group.themeV3Effects': '效果（V3）',
+    'group.themeV3Typography': '版式缩放（V3）',
+    'background.type': '背景类型',
+    'background.angle': '渐变角度',
+    'background.scrim': '读性遮罩',
+    'background.animation': '背景动画',
+    'background.stop1': '停靠点 1',
+    'background.stop2': '停靠点 2',
+    'background.stop3': '停靠点 3',
+    'background.stop4': '停靠点 4',
+    'effects.scanline': '扫描线',
+    'effects.flicker': '闪烁',
+    'effects.glow': '辉光',
+    'effects.noise': '噪点',
+    'typography.fontScale': '字号缩放',
+    'typography.radiusScale': '圆角缩放',
     'appearance.name': '主题名称',
     'appearance.colorScheme': '明暗模式',
     'appearance.style': '整体风格',
@@ -2722,6 +2807,7 @@ const TRANSLATIONS = {
     'appearance.font': '字体',
     'appearance.shadow': '阴影',
     'appearance.motion': '动效',
+    'appearance.blur': '表面模糊',
     'appearance.button': '按钮',
     'appearance.input': '输入框',
     'appearance.card': '卡片',
@@ -2731,7 +2817,7 @@ const TRANSLATIONS = {
     'option.standard': '标准',
     'option.cyberpunk': '赛博朋克',
     'option.soft': '柔和',
-    'option.dense': '紧凑',
+    'option.liquid': '液态玻璃',
     'option.square': '方正',
     'option.rounded': '圆角',
     'option.compact': '紧凑',
@@ -2742,6 +2828,11 @@ const TRANSLATIONS = {
     'option.none': '无',
     'option.subtle': '轻微',
     'option.elevated': '悬浮',
+    'option.solid': '纯色',
+    'option.linear': '线性渐变',
+    'option.radial': '径向渐变',
+    'option.mesh': '网格渐变',
+    'option.drift': '缓慢漂移',
     'option.reduced': '精简',
     'option.full': '完整',
     'option.outline': '描边',
@@ -2790,6 +2881,7 @@ const TRANSLATIONS = {
   'en-US': {
     'page.title': 'CloudSSH Theme Editor',
     'language.zhCN': '简体中文',
+    'language.zhTW': '繁體中文',
     'language.enUS': 'English',
     'language.switchTo': 'Switch to {language}',
     'editor.title': 'THEME EDITOR',
@@ -2870,6 +2962,23 @@ const TRANSLATIONS = {
     'group.basic': 'THEME INFORMATION',
     'group.appearance': 'APPEARANCE',
     'group.componentStyles': 'COMPONENT STYLES',
+    'group.themeV3Background': 'BACKGROUND (V3)',
+    'group.themeV3Effects': 'EFFECTS (V3)',
+    'group.themeV3Typography': 'TYPOGRAPHY SCALE (V3)',
+    'background.type': 'Background type',
+    'background.angle': 'Gradient angle',
+    'background.scrim': 'Readability scrim',
+    'background.animation': 'Background animation',
+    'background.stop1': 'Stop 1',
+    'background.stop2': 'Stop 2',
+    'background.stop3': 'Stop 3',
+    'background.stop4': 'Stop 4',
+    'effects.scanline': 'Scanline',
+    'effects.flicker': 'Flicker',
+    'effects.glow': 'Glow',
+    'effects.noise': 'Noise',
+    'typography.fontScale': 'Font scale',
+    'typography.radiusScale': 'Radius scale',
     'appearance.name': 'Theme name',
     'appearance.colorScheme': 'Color scheme',
     'appearance.style': 'Style',
@@ -2878,6 +2987,7 @@ const TRANSLATIONS = {
     'appearance.font': 'Font',
     'appearance.shadow': 'Shadow',
     'appearance.motion': 'Motion',
+    'appearance.blur': 'Surface blur',
     'appearance.button': 'Button',
     'appearance.input': 'Input',
     'appearance.card': 'Card',
@@ -2887,7 +2997,7 @@ const TRANSLATIONS = {
     'option.standard': 'Standard',
     'option.cyberpunk': 'Cyberpunk',
     'option.soft': 'Soft',
-    'option.dense': 'Dense',
+    'option.liquid': 'Liquid Glass',
     'option.square': 'Square',
     'option.rounded': 'Rounded',
     'option.compact': 'Compact',
@@ -2898,6 +3008,11 @@ const TRANSLATIONS = {
     'option.none': 'None',
     'option.subtle': 'Subtle',
     'option.elevated': 'Elevated',
+    'option.solid': 'Solid',
+    'option.linear': 'Linear',
+    'option.radial': 'Radial',
+    'option.mesh': 'Mesh',
+    'option.drift': 'Drift',
     'option.reduced': 'Reduced',
     'option.full': 'Full',
     'option.outline': 'Outline',
@@ -2942,7 +3057,187 @@ const TRANSLATIONS = {
     'variable.modalOverlay': 'Modal Overlay',
     'variable.onSurface': 'Surface Text',
     'variable.onSurfaceVariant': 'Surface Text Variant',
-  }
+  },
+
+  'zh-TW': {
+    'page.title': 'CloudSSH 主題線上編輯器',
+    'language.zhCN': '簡體中文',
+    'language.zhTW': '繁體中文',
+    'language.enUS': 'English',
+    'language.switchTo': '切換到{language}',
+    'editor.title': '主題線上編輯器',
+    'editor.import': '匯入',
+    'editor.export': '匯出',
+    'editor.importTitle': '匯入主題 JSON',
+    'editor.exportTitle': '匯出主題 JSON',
+    'editor.presets': '預設主題',
+    'editor.custom': '自定義',
+    'preview.login': '匿名連線',
+    'preview.userSpace': '使用者空間',
+    'preview.modal': '（彈窗預覽）',
+    'preview.terminalSftp': '終端與 SFTP',
+    'preview.agent': 'AI Agent 面板（思考進度）',
+    'common.optional': '可選',
+    'common.password': '密碼',
+    'common.privateKey': '私鑰',
+    'common.connect': '連線',
+    'common.documentation': '文件',
+    'auth.connectionParameters': '連線參數',
+    'auth.host': '主機位址',
+    'auth.port': '連接埠',
+    'auth.user': '使用者名稱',
+    'auth.method': '驗證方式',
+    'auth.regionHint': '連線區域',
+    'auth.remember': '記住連線資訊',
+    'auth.execute': '建立連線',
+    'auth.statusOffline': '狀態：離線',
+    'auth.recent': '最近連線',
+    'region.auto': '自動（儲存時由系統推斷）',
+    'server.list': '伺服器列表',
+    'server.manage': '管理你的 SSH 連線',
+    'server.add': '新增伺服器',
+    'server.searchPlaceholder': '按名稱、主機或使用者名稱搜尋',
+    'server.hostLabel': '主機',
+    'server.userLabel': '使用者',
+    'server.regionLabel': '區域',
+    'server.regionAuto': '自動',
+    'server.regionManual': '手動',
+    'server.name': '伺服器名稱',
+    'server.save': '儲存伺服器',
+    'terminal.connected': '已連線',
+    'terminal.host': '主機：{value}',
+    'terminal.user': '使用者：{value}',
+    'terminal.port': '連接埠：{value}',
+    'terminal.wsSendingCredentials': '[+] WebSocket 已連線，正在傳送憑據…',
+    'terminal.wsAuthenticating': '[*] WebSocket 已連線，正在驗證…',
+    'terminal.authSuccess': '[*] 驗證成功',
+    'terminal.askAISelection': '詢問 AI 助手',
+    'sftp.title': 'SFTP 檔案管理器',
+    'sftp.uploadAction': '上傳檔案',
+    'sftp.mkdirAction': '新增資料夾',
+    'sftp.downloadAction': '下載',
+    'sftp.deleteAction': '刪除',
+    'sftp.renameAction': '重新命名',
+    'sftp.ready': '就緒',
+    'sftp.count': '2 個目錄，4 個檔案',
+    'agent.title': 'AI Agent 助手',
+    'agent.sampleRequest': '幫我檢查伺服器的設定資訊',
+    'agent.completedSteps': '已完成 5 個步驟',
+    'agent.sampleTitle': '伺服器設定資訊彙總',
+    'agent.item': '項目',
+    'agent.value': '值',
+    'agent.os': '作業系統',
+    'agent.kernel': '核心版本',
+    'agent.memory': '記憶體',
+    'agent.sampleAdvice': '建議先檢查服務狀態：',
+    'agent.codeTarget': '目標：{value}',
+    'agent.codeCopy': '複製',
+    'agent.codeFill': '填入終端',
+    'agent.placeholder': '描述你希望 Agent 完成的任務…',
+    'feedback.imported': '主題匯入成功。',
+    'feedback.exported': '主題 JSON 已匯出。',
+    'feedback.missingUi': '主題檔案不包含有效的顏色、終端或外觀設定。',
+    'feedback.invalidJson': '檔案不是有效的主題 JSON。',
+    'feedback.fileTooLarge': '主題檔案不能超過 64 KiB。',
+    'feedback.invalidColor': '請先修正標紅的無效顏色值。',
+    'group.basic': '主題資訊',
+    'group.appearance': '整體外觀',
+    'group.componentStyles': '元件樣式',
+    'group.themeV3Background': '背景層（V3）',
+    'group.themeV3Effects': '效果（V3）',
+    'group.themeV3Typography': '版式縮放（V3）',
+    'background.type': '背景型別',
+    'background.angle': '漸變角度',
+    'background.scrim': '讀性遮罩',
+    'background.animation': '背景動畫',
+    'background.stop1': '停靠點 1',
+    'background.stop2': '停靠點 2',
+    'background.stop3': '停靠點 3',
+    'background.stop4': '停靠點 4',
+    'effects.scanline': '掃描線',
+    'effects.flicker': '閃爍',
+    'effects.glow': '輝光',
+    'effects.noise': '噪點',
+    'typography.fontScale': '字號縮放',
+    'typography.radiusScale': '圓角縮放',
+    'appearance.name': '主題名稱',
+    'appearance.colorScheme': '明暗模式',
+    'appearance.style': '整體風格',
+    'appearance.shape': '形狀',
+    'appearance.density': '密度',
+    'appearance.font': '字型',
+    'appearance.shadow': '陰影',
+    'appearance.motion': '動效',
+    'appearance.blur': '表面模糊',
+    'appearance.button': '按鈕',
+    'appearance.input': '輸入框',
+    'appearance.card': '卡片',
+    'appearance.tabs': '標籤頁',
+    'option.dark': '深色',
+    'option.light': '淺色',
+    'option.standard': '標準',
+    'option.cyberpunk': '賽博朋克',
+    'option.soft': '柔和',
+    'option.liquid': '液態玻璃',
+    'option.square': '方正',
+    'option.rounded': '圓角',
+    'option.compact': '緊湊',
+    'option.comfortable': '舒適',
+    'option.spacious': '寬鬆',
+    'option.mono': '等寬字型',
+    'option.system': '系統字型',
+    'option.none': '無',
+    'option.subtle': '輕微',
+    'option.elevated': '懸浮',
+    'option.solid': '實心',
+    'option.linear': '線性漸變',
+    'option.radial': '徑向漸變',
+    'option.mesh': '網格漸變',
+    'option.drift': '緩慢漂移',
+    'option.reduced': '精簡',
+    'option.full': '完整',
+    'option.outline': '描邊',
+    'option.underline': '下劃線',
+    'option.boxed': '方框',
+    'option.outlined': '描邊',
+    'option.flat': '扁平',
+    'option.segmented': '分段',
+    'group.backgrounds': '背景顏色',
+    'group.text': '文字顏色',
+    'group.accents': '強調顏色',
+    'group.borders': '邊框',
+    'group.error': '錯誤狀態',
+    'group.components': '元件',
+    'group.agent': 'AI Agent',
+    'group.effects': '視覺效果',
+    'variable.bg': '頁面背景',
+    'variable.bgSurface': '卡片 / 表面',
+    'variable.bgElevated': '浮層表面',
+    'variable.bgTerminal': '終端背景',
+    'variable.text': '主要文字',
+    'variable.textMuted': '次要文字',
+    'variable.textDim': '弱化文字',
+    'variable.accent': '主要強調色',
+    'variable.accentSecondary': '次要強調色',
+    'variable.accentSecondaryLight': '次要淺色',
+    'variable.onAccent': '強調色上的文字',
+    'variable.border': '邊框',
+    'variable.borderStrong': '強邊框',
+    'variable.error': '錯誤文字',
+    'variable.errorBg': '錯誤背景',
+    'variable.surfaceDot': '狀態點',
+    'variable.scrollbarTrack': '捲軸軌道',
+    'variable.scrollbarThumb': '捲軸滑塊',
+    'variable.scrollbarThumbHover': '捲軸懸停',
+    'variable.agentUser': '使用者訊息',
+    'variable.agentBot': 'Agent 訊息',
+    'variable.scanline': '掃描線疊層',
+    'variable.accentGlow': '強調色光暈',
+    'variable.accentBg': '強調色背景',
+    'variable.modalOverlay': '彈窗遮罩',
+    'variable.onSurface': '表面文字',
+    'variable.onSurfaceVariant': '表面次要文字',
+  },
 };
 
 const LOCALE_STORAGE_KEY = 'cloudssh_locale';
@@ -2950,7 +3245,17 @@ let locale = 'zh-CN';
 
 function normalizeLocale(value) {
   if (!value) return null;
-  const normalized = String(value).replace('_', '-').toLowerCase();
+  const normalized = String(value).replace(/_/g, '-').toLowerCase();
+  if (
+    normalized === 'zh-tw' ||
+    normalized.startsWith('zh-tw-') ||
+    normalized === 'zh-hk' ||
+    normalized.startsWith('zh-hk-') ||
+    normalized === 'zh-mo' ||
+    normalized.startsWith('zh-mo-') ||
+    normalized === 'zh-hant' ||
+    normalized.startsWith('zh-hant-')
+  ) return 'zh-TW';
   if (normalized === 'zh' || normalized.startsWith('zh-')) return 'zh-CN';
   if (normalized === 'en' || normalized.startsWith('en-')) return 'en-US';
   return null;
@@ -2988,8 +3293,9 @@ function translateDocument() {
     element.textContent = t(element.dataset.i18nTemplate, { value: element.dataset.value || '' });
   });
 
-  const alternateLocale = locale === 'zh-CN' ? 'en-US' : 'zh-CN';
-  const alternateLabel = TRANSLATIONS[alternateLocale][`language.${alternateLocale === 'zh-CN' ? 'zhCN' : 'enUS'}`];
+  const alternateLocale = locale === 'zh-CN' ? 'zh-TW' : locale === 'zh-TW' ? 'en-US' : 'zh-CN';
+  const alternateKey = alternateLocale === 'zh-CN' ? 'zhCN' : alternateLocale === 'zh-TW' ? 'zhTW' : 'enUS';
+  const alternateLabel = TRANSLATIONS[alternateLocale]['language.' + alternateKey];
   const languageButton = document.getElementById('language-toggle');
   document.getElementById('language-toggle-label').textContent = alternateLabel;
   languageButton.title = t('language.switchTo', { language: alternateLabel });
@@ -3030,6 +3336,7 @@ const PRESETS = /* THEME_PRESETS_START */ {
       "font": "system",
       "shadow": "subtle",
       "motion": "reduced",
+      "blur": "subtle",
       "components": {
         "button": "solid",
         "input": "boxed",
@@ -3101,6 +3408,7 @@ const PRESETS = /* THEME_PRESETS_START */ {
       "font": "system",
       "shadow": "subtle",
       "motion": "reduced",
+      "blur": "subtle",
       "components": {
         "button": "solid",
         "input": "boxed",
@@ -3173,12 +3481,27 @@ const PRESETS = /* THEME_PRESETS_START */ {
       "font": "mono",
       "shadow": "none",
       "motion": "full",
+      "blur": "none",
       "components": {
         "button": "outline",
         "input": "underline",
         "card": "outlined",
         "tabs": "underline"
       }
+    },
+    "background": {
+      "type": "linear",
+      "stops": [
+        "#0a0a0a",
+        "#11170c"
+      ],
+      "angle": 165,
+      "scrim": 0.3,
+      "animation": "none"
+    },
+    "effects": {
+      "scanline": 1,
+      "flicker": 1
     },
     "terminal": {
       "background": "#0a0a0a",
@@ -3217,16 +3540,17 @@ const PRESETS = /* THEME_PRESETS_START */ {
       "--agent-agent-color": "#14d1ff"
     }
   },
-  "glacier": {
-    "name": "Glacier",
-    "colorScheme": "dark",
+  "liquid-glass": {
+    "name": "Liquid Glass",
+    "colorScheme": "light",
     "appearance": {
-      "style": "soft",
+      "style": "liquid",
       "shape": "soft",
       "density": "comfortable",
       "font": "system",
       "shadow": "elevated",
-      "motion": "reduced",
+      "motion": "full",
+      "blur": "strong",
       "components": {
         "button": "soft",
         "input": "boxed",
@@ -3234,95 +3558,79 @@ const PRESETS = /* THEME_PRESETS_START */ {
         "tabs": "segmented"
       }
     },
-    "terminal": {
-      "background": "#0a192f",
-      "foreground": "#64ffda",
-      "cursor": "#e6f1ff",
-      "cursorAccent": "#0a192f",
-      "selectionBackground": "#112240"
+    "background": {
+      "type": "mesh",
+      "stops": [
+        "#a2d2ff",
+        "#d8b4fe",
+        "#ffc8dd",
+        "#bde0fe",
+        "#ffdfba"
+      ],
+      "angle": 135,
+      "scrim": 0.35,
+      "animation": "drift"
     },
-    "ui": {
-      "--bg": "#0a192f",
-      "--bg-surface": "#0d2137",
-      "--bg-elevated": "#112240",
-      "--bg-terminal": "#061526",
-      "--text": "#64ffda",
-      "--text-muted": "#8892b0",
-      "--text-dim": "#495670",
-      "--accent": "#64ffda",
-      "--accent-secondary": "#e6f1ff",
-      "--accent-secondary-light": "#ccd6f6",
-      "--border": "#1d3557",
-      "--border-strong": "#495670",
-      "--error": "#ff6b6b",
-      "--error-bg": "#3d0000",
-      "--on-accent": "#0a192f",
-      "--surface-dot": "#1d3557",
-      "--scrollbar-track": "rgba(10, 25, 47, 0.5)",
-      "--scrollbar-thumb": "rgba(100, 255, 218, 0.2)",
-      "--scrollbar-thumb-hover": "rgba(100, 255, 218, 0.4)",
-      "--scanline-tint": "rgba(100, 255, 218, 0.02)",
-      "--accent-glow": "rgba(100, 255, 218, 0.08)",
-      "--accent-bg": "rgba(100, 255, 218, 0.1)",
-      "--modal-overlay": "rgba(0, 0, 0, 0.85)",
-      "--on-surface": "#e6f1ff",
-      "--on-surface-variant": "#8892b0",
-      "--agent-user-color": "#64ffda",
-      "--agent-agent-color": "#e6f1ff"
-    }
-  },
-  "gruvbox": {
-    "name": "Gruvbox",
-    "colorScheme": "dark",
-    "appearance": {
-      "style": "dense",
-      "shape": "rounded",
-      "density": "compact",
-      "font": "mono",
-      "shadow": "none",
-      "motion": "reduced",
-      "components": {
-        "button": "outline",
-        "input": "boxed",
-        "card": "flat",
-        "tabs": "segmented"
-      }
+    "effects": {
+      "glow": 0.35
+    },
+    "typography": {
+      "fontScale": 1.02,
+      "radiusScale": 1.4
     },
     "terminal": {
-      "background": "#282828",
-      "foreground": "#ebdbb2",
-      "cursor": "#d3869b",
-      "cursorAccent": "#282828",
-      "selectionBackground": "#504945"
+      "background": "#fbfbfd",
+      "foreground": "#1d1d1f",
+      "cursor": "#0071e3",
+      "cursorAccent": "#ffffff",
+      "selectionBackground": "#b3d7ff",
+      "selectionForeground": "#1d1d1f",
+      "selectionInactiveBackground": "#e5f0ff",
+      "black": "#1d1d1f",
+      "red": "#ff3b30",
+      "green": "#34c759",
+      "yellow": "#ff9500",
+      "blue": "#0071e3",
+      "magenta": "#af52de",
+      "cyan": "#55bef0",
+      "white": "#8e8e93",
+      "brightBlack": "#636366",
+      "brightRed": "#ff453a",
+      "brightGreen": "#30d158",
+      "brightYellow": "#ffd60a",
+      "brightBlue": "#409cff",
+      "brightMagenta": "#bf5af2",
+      "brightCyan": "#64d2ff",
+      "brightWhite": "#1d1d1f"
     },
     "ui": {
-      "--bg": "#282828",
-      "--bg-surface": "#303030",
-      "--bg-elevated": "#282828",
-      "--bg-terminal": "#1d2021",
-      "--text": "#ebdbb2",
-      "--text-muted": "#a89984",
-      "--text-dim": "#665c54",
-      "--accent": "#b8bb26",
-      "--accent-secondary": "#83a598",
-      "--accent-secondary-light": "#8ec07c",
-      "--border": "#3c3836",
-      "--border-strong": "#665c54",
-      "--error": "#fb4934",
-      "--error-bg": "#3d0000",
-      "--on-accent": "#282828",
-      "--surface-dot": "#3c3836",
-      "--scrollbar-track": "rgba(40, 40, 40, 0.5)",
-      "--scrollbar-thumb": "rgba(168, 153, 132, 0.3)",
-      "--scrollbar-thumb-hover": "rgba(168, 153, 132, 0.5)",
-      "--scanline-tint": "rgba(184, 187, 38, 0.02)",
-      "--accent-glow": "rgba(184, 187, 38, 0.08)",
-      "--accent-bg": "rgba(184, 187, 38, 0.1)",
-      "--modal-overlay": "rgba(0, 0, 0, 0.75)",
-      "--on-surface": "#ebdbb2",
-      "--on-surface-variant": "#a89984",
-      "--agent-user-color": "#b8bb26",
-      "--agent-agent-color": "#83a598"
+      "--bg": "#e6ecf4",
+      "--bg-surface": "rgba(255, 255, 255, 0.22)",
+      "--bg-elevated": "rgba(255, 255, 255, 0.38)",
+      "--bg-terminal": "rgba(255, 255, 255, 0.88)",
+      "--text": "#1d1d1f",
+      "--text-muted": "#515154",
+      "--text-dim": "#69696e",
+      "--accent": "#0066da",
+      "--accent-secondary": "#5856d6",
+      "--accent-secondary-light": "#c7dfff",
+      "--border": "rgba(255, 255, 255, 0.42)",
+      "--border-strong": "rgba(255, 255, 255, 0.72)",
+      "--error": "#d70015",
+      "--error-bg": "rgba(215, 0, 21, 0.12)",
+      "--on-accent": "#ffffff",
+      "--surface-dot": "rgba(0, 0, 0, 0.08)",
+      "--scrollbar-track": "rgba(0, 0, 0, 0.03)",
+      "--scrollbar-thumb": "rgba(0, 0, 0, 0.18)",
+      "--scrollbar-thumb-hover": "rgba(0, 0, 0, 0.32)",
+      "--scanline-tint": "transparent",
+      "--accent-glow": "rgba(0, 102, 218, 0.16)",
+      "--accent-bg": "rgba(0, 102, 218, 0.1)",
+      "--modal-overlay": "rgba(20, 24, 33, 0.28)",
+      "--on-surface": "#1d1d1f",
+      "--on-surface-variant": "#515154",
+      "--agent-user-color": "#0066da",
+      "--agent-agent-color": "#5856d6"
     }
   }
 } /* THEME_PRESETS_END */;
@@ -3374,16 +3682,20 @@ let activePreset = 'cyberpunk';
 let colorScheme = 'dark';
 let themeName = 'Cyberpunk';
 let appearance = {};
+let background = null;
+let effects = {};
+let typography = null;
 const THEME_MAX_BYTES = 64 * 1024;
 const invalidColorProperties = new Set();
 
 const APPEARANCE_FIELDS = [
-  { key: 'style', labelKey: 'appearance.style', values: ['standard', 'cyberpunk', 'soft', 'dense'] },
+  { key: 'style', labelKey: 'appearance.style', values: ['standard', 'cyberpunk', 'soft', 'dense', 'liquid'] },
   { key: 'shape', labelKey: 'appearance.shape', values: ['square', 'rounded', 'soft'] },
   { key: 'density', labelKey: 'appearance.density', values: ['compact', 'comfortable', 'spacious'] },
   { key: 'font', labelKey: 'appearance.font', values: ['mono', 'system'] },
   { key: 'shadow', labelKey: 'appearance.shadow', values: ['none', 'subtle', 'elevated'] },
   { key: 'motion', labelKey: 'appearance.motion', values: ['none', 'reduced', 'full'] },
+  { key: 'blur', labelKey: 'appearance.blur', values: ['none', 'subtle', 'strong'] },
 ];
 
 const COMPONENT_FIELDS = [
@@ -3413,6 +3725,9 @@ function initTheme(presetName) {
     ...preset.appearance,
     components: { ...preset.appearance.components },
   };
+  background = preset.background ? structuredClone(preset.background) : null;
+  effects = { ...(preset.effects || {}) };
+  typography = preset.typography ? { ...preset.typography } : null;
   renderControls();
   applyTheme();
   syncThemeSelectors(presetName);
@@ -3453,6 +3768,26 @@ function renderControls() {
       `data-component="${field.key}"`,
     ))
     .join('');
+
+  // V3：背景层 / 效果 / 版式面板
+  html += `<div class="section-title">${t('group.themeV3Background')}</div>`;
+  html += settingSelect('background.type', background?.type || 'solid', ['solid', 'linear', 'radial', 'mesh'], 'data-background="type"');
+  html += settingRange('background.angle', background?.angle ?? 160, 0, 360, 1, 'data-background="angle"');
+  html += settingRange('background.scrim', background?.scrim ?? 0.3, 0, 0.85, 0.01, 'data-background="scrim"');
+  html += settingSelect('background.animation', background?.animation || 'none', ['none', 'drift'], 'data-background="animation"');
+  for (let i = 0; i < 4; i++) {
+    html += settingInput(`background.stop${i + 1}`, background?.stops?.[i] || '', `data-background-stop="${i}"`);
+  }
+
+  html += `<div class="section-title">${t('group.themeV3Effects')}</div>`;
+  html += settingRange('effects.scanline', effects.scanline ?? 0, 0, 1, 0.05, 'data-effect="scanline"');
+  html += settingRange('effects.flicker', effects.flicker ?? 0, 0, 1, 0.05, 'data-effect="flicker"');
+  html += settingRange('effects.glow', effects.glow ?? 0, 0, 1, 0.05, 'data-effect="glow"');
+  html += settingRange('effects.noise', effects.noise ?? 0, 0, 1, 0.01, 'data-effect="noise"');
+
+  html += `<div class="section-title">${t('group.themeV3Typography')}</div>`;
+  html += settingRange('typography.fontScale', typography?.fontScale ?? 1, 0.85, 1.25, 0.01, 'data-typography="fontScale"');
+  html += settingRange('typography.radiusScale', typography?.radiusScale ?? 1, 0.5, 2, 0.05, 'data-typography="radiusScale"');
 
   for (const group of VARIABLE_GROUPS) {
     html += `<div class="section-title">${t(group.titleKey)}</div>`;
@@ -3495,6 +3830,69 @@ function renderControls() {
   container.querySelectorAll('[data-component]').forEach(select => {
     select.addEventListener('change', (event) => {
       appearance.components[event.target.dataset.component] = event.target.value;
+      markThemeCustomized();
+      applyTheme();
+    });
+  });
+
+  // V3：背景层 / 效果 / 版式控件事件
+  container.querySelectorAll('[data-background]').forEach(control => {
+    control.addEventListener('input', (event) => {
+      const target = event.target;
+      const key = target.dataset.background;
+      background = normalizeBackgroundState(background);
+      if (key === 'angle' || key === 'scrim') {
+        background[key] = Number(target.value);
+      } else {
+        background[key] = target.value;
+      }
+      markThemeCustomized();
+      applyTheme();
+    });
+  });
+
+  container.querySelectorAll('[data-background-stop]').forEach(input => {
+    input.addEventListener('input', (event) => {
+      const target = event.target;
+      const index = Number(target.dataset.backgroundStop);
+      background = normalizeBackgroundState(background);
+      const stops = [...(background.stops || [])];
+      const value = target.value.trim();
+      if (value === '') {
+        delete stops[index];
+      } else if (isSafeColor(value)) {
+        stops[index] = value;
+        target.setAttribute('aria-invalid', 'false');
+      } else {
+        target.setAttribute('aria-invalid', 'true');
+      }
+      background.stops = stops.filter(stop => stop !== undefined);
+      markThemeCustomized();
+      applyTheme();
+    });
+  });
+
+  container.querySelectorAll('[data-effect]').forEach(input => {
+    input.addEventListener('input', (event) => {
+      const key = event.target.dataset.effect;
+      const value = Number(event.target.value);
+      if (value > 0) effects[key] = value;
+      else delete effects[key];
+      markThemeCustomized();
+      applyTheme();
+    });
+  });
+
+  container.querySelectorAll('[data-typography]').forEach(input => {
+    input.addEventListener('input', (event) => {
+      const key = event.target.dataset.typography;
+      const value = Number(event.target.value);
+      typography = {
+        fontScale: typography?.fontScale ?? 1,
+        radiusScale: typography?.radiusScale ?? 1,
+        [key]: value,
+      };
+      if (typography.fontScale === 1 && typography.radiusScale === 1) typography = null;
       markThemeCustomized();
       applyTheme();
     });
@@ -3566,6 +3964,23 @@ function settingSelect(labelKey, value, values, attribute) {
     + `<select ${attribute} aria-label="${escapeAttribute(t(labelKey))}">${options}</select></div>`;
 }
 
+function settingRange(labelKey, value, min, max, step, attribute) {
+  return `<div class="setting-row"><label>${t(labelKey)}</label>`
+    + `<input type="range" min="${min}" max="${max}" step="${step}" value="${value}" ${attribute} aria-label="${escapeAttribute(t(labelKey))}">`
+    + `<span class="range-value">${value}</span></div>`;
+}
+
+function normalizeBackgroundState(current) {
+  if (current) return current;
+  return {
+    type: 'linear',
+    stops: ['#0a0a0a'],
+    angle: 160,
+    scrim: 0.3,
+    animation: 'none',
+  };
+}
+
 function applyTheme() {
   const scope = document.getElementById('theme-scope');
   scope.style.colorScheme = colorScheme;
@@ -3576,6 +3991,7 @@ function applyTheme() {
   scope.dataset.uiFont = appearance.font;
   scope.dataset.uiShadow = appearance.shadow;
   scope.dataset.uiMotion = appearance.motion;
+  scope.dataset.uiBlur = appearance.blur;
   scope.dataset.componentButton = appearance.components.button;
   scope.dataset.componentInput = appearance.components.input;
   scope.dataset.componentCard = appearance.components.card;
@@ -3583,6 +3999,40 @@ function applyTheme() {
   for (const [varName, val] of Object.entries(theme)) {
     scope.style.setProperty(varName, val);
   }
+  // V3：背景栈（含读性遮罩）与效果开关（与应用同构）
+  if (background && background.type !== 'solid' && (background.stops || []).length >= 2 && background.stops.every(isSafeColor)) {
+    const channel = colorScheme === 'dark' ? '0, 0, 0' : '255, 255, 255';
+    const scrimAlpha = background.scrim ?? 0.3;
+    const scrim = `linear-gradient(rgba(${channel}, ${scrimAlpha}), rgba(${channel}, ${scrimAlpha}))`;
+    let gradient;
+    if (background.type === 'linear') {
+      gradient = `linear-gradient(${background.angle ?? 160}deg, ${background.stops.join(', ')})`;
+    } else if (background.type === 'radial') {
+      gradient = `radial-gradient(ellipse at 50% 25%, ${background.stops.join(', ')})`;
+    } else {
+      const [a, b, c] = background.stops;
+      gradient = [
+        `radial-gradient(at 18% 22%, ${a} 0px, transparent 55%)`,
+        `radial-gradient(at 82% 28%, ${b || a} 0px, transparent 50%)`,
+        `radial-gradient(at 50% 88%, ${c || b || a} 0px, transparent 60%)`,
+      ].join(', ');
+    }
+    scope.style.setProperty('--app-bg-stack', `${scrim}, ${gradient}`);
+    scope.dataset.bgAnimation = background.animation === 'drift' ? 'drift' : 'none';
+  } else {
+    scope.style.setProperty('--app-bg-stack', 'none');
+    scope.dataset.bgAnimation = 'none';
+  }
+  scope.dataset.fxScanline = effects.scanline ? 'on' : 'off';
+  scope.dataset.fxFlicker = effects.flicker ? 'on' : 'off';
+  scope.dataset.fxGlow = effects.glow ? 'on' : 'off';
+  scope.dataset.fxNoise = effects.noise ? 'on' : 'off';
+  scope.style.setProperty('--fx-scanline-opacity', String(effects.scanline ?? 1));
+  scope.style.setProperty('--fx-flicker-speed', `${0.32 - 0.2 * (effects.flicker ?? 1)}s`);
+  scope.style.setProperty('--fx-glow-strength', String(effects.glow ?? 0.6));
+  scope.style.setProperty('--fx-noise-opacity', String(effects.noise ?? 0.05));
+  scope.style.setProperty('--radius-scale', String(typography?.radiusScale ?? 1));
+  scope.style.setProperty('--type-scale', String(typography?.fontScale ?? 1));
 }
 
 // Preset selector
@@ -3633,6 +4083,11 @@ document.getElementById('import-input').addEventListener('change', (e) => {
         ? data.name.trim().slice(0, 80)
         : 'Custom';
       appearance = mergeAppearance(fallbackPreset.appearance, importedAppearance);
+      background = sanitizeBackground(data.background, importedScheme)
+        || structuredClone(fallbackPreset.background || null);
+      effects = { ...(fallbackPreset.effects || {}), ...(sanitizeEffects(data.effects) || {}) };
+      typography = sanitizeTypography(data.typography)
+        || (fallbackPreset.typography ? { ...fallbackPreset.typography } : null);
       activePreset = requestedBase;
       invalidColorProperties.clear();
       syncThemeSelectors('custom');
@@ -3660,7 +4115,7 @@ document.getElementById('btn-export').addEventListener('click', () => {
     Object.keys(PRESETS['standard-dark'].terminal),
   );
   const output = {
-    schemaVersion: 2,
+    schemaVersion: 4,
     name: themeName.trim() || 'Custom',
     baseTheme: activePreset || (colorScheme === 'light' ? 'standard-light' : 'cyberpunk'),
     colorScheme,
@@ -3678,6 +4133,12 @@ document.getElementById('btn-export').addEventListener('click', () => {
     },
     ui: safeUiTheme,
   };
+  const safeBackground = sanitizeBackground(background, colorScheme);
+  if (safeBackground) output.background = safeBackground;
+  const safeEffects = sanitizeEffects(effects);
+  if (safeEffects) output.effects = safeEffects;
+  const safeTypography = sanitizeTypography(typography);
+  if (safeTypography) output.typography = safeTypography;
 
   const json = JSON.stringify(output, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
@@ -3730,6 +4191,38 @@ function sanitizeAppearance(value) {
   return Object.keys(result).length > 1 || Object.keys(result.components).length ? result : null;
 }
 
+function sanitizeBackground(value, scheme) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const stops = Array.isArray(value.stops)
+    ? value.stops.filter(s => typeof s === 'string' && isSafeColor(s)).slice(0, 5)
+    : [];
+  if (stops.length === 0) return null;
+  const type = ['solid', 'linear', 'radial', 'mesh'].includes(value.type) ? value.type : 'linear';
+  const animation = value.animation === 'drift' ? 'drift' : 'none';
+  const angle = Math.min(360, Math.max(0, Number(value.angle) || 160));
+  let scrim = Math.min(0.85, Math.max(0, Number(value.scrim) || 0));
+  if (type !== 'solid') scrim = Math.max(scrim, scheme === 'light' ? 0.35 : 0.25);
+  return { type, stops, angle, scrim, animation };
+}
+
+function sanitizeEffects(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const result = {};
+  for (const name of ['scanline', 'flicker', 'glow', 'noise']) {
+    const raw = Number(value[name]);
+    if (Number.isFinite(raw) && raw > 0) result[name] = Math.min(1, raw);
+  }
+  return Object.keys(result).length ? result : undefined;
+}
+
+function sanitizeTypography(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const fontScale = Math.min(1.25, Math.max(0.85, Number(value.fontScale) || 1));
+  const radiusScale = Math.min(2, Math.max(0.5, Number(value.radiusScale) || 1));
+  if (fontScale === 1 && radiusScale === 1) return null;
+  return { fontScale, radiusScale };
+}
+
 function mergeAppearance(fallback, imported) {
   return {
     ...fallback,
@@ -3751,7 +4244,7 @@ function inferColorScheme(background) {
 }
 
 document.getElementById('language-toggle').addEventListener('click', () => {
-  setLocale(locale === 'zh-CN' ? 'en-US' : 'zh-CN');
+  setLocale(locale === 'zh-CN' ? 'zh-TW' : locale === 'zh-TW' ? 'en-US' : 'zh-CN');
 });
 
 document.querySelectorAll('[data-current-year]').forEach((element) => {

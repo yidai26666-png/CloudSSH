@@ -1,13 +1,15 @@
 import { enUS } from './locales/en-US';
 import { zhCN } from './locales/zh-CN';
+import { zhTW } from './locales/zh-TW';
 
-export type Locale = 'zh-CN' | 'en-US';
+export type Locale = 'zh-CN' | 'zh-TW' | 'en-US';
 export type TranslationKey = keyof typeof zhCN;
 export type TranslationParams = Record<string, string | number>;
 
 const STORAGE_KEY = 'cloudssh_locale';
 const dictionaries: Record<Locale, Record<TranslationKey, string>> = {
   'zh-CN': zhCN,
+  'zh-TW': zhTW,
   'en-US': enUS,
 };
 const listeners = new Set<(locale: Locale) => void>();
@@ -15,7 +17,18 @@ let currentLocale: Locale = 'zh-CN';
 
 export function normalizeLocale(value: string | null | undefined): Locale | null {
   if (!value) return null;
-  const normalized = value.replace('_', '-').toLowerCase();
+  const normalized = value.replaceAll('_', '-').toLowerCase();
+  if (
+    normalized === 'zh-tw' ||
+    normalized.startsWith('zh-tw-') ||
+    normalized === 'zh-hk' ||
+    normalized.startsWith('zh-hk-') ||
+    normalized === 'zh-mo' ||
+    normalized.startsWith('zh-mo-') ||
+    normalized === 'zh-hant' ||
+    normalized.startsWith('zh-hant-')
+  )
+    return 'zh-TW';
   if (normalized === 'zh' || normalized.startsWith('zh-')) return 'zh-CN';
   if (normalized === 'en' || normalized.startsWith('en-')) return 'en-US';
   return null;
@@ -26,16 +39,20 @@ export function resolveLocale(options: {
   storedLocale?: string | null;
   browserLocales?: readonly string[];
 }): Locale {
-  return normalizeLocale(options.urlLocale)
-    ?? normalizeLocale(options.storedLocale)
-    ?? options.browserLocales?.map(normalizeLocale).find((locale): locale is Locale => locale !== null)
-    ?? 'zh-CN';
+  return (
+    normalizeLocale(options.urlLocale) ??
+    normalizeLocale(options.storedLocale) ??
+    options.browserLocales
+      ?.map(normalizeLocale)
+      .find((locale): locale is Locale => locale !== null) ??
+    'zh-CN'
+  );
 }
 
 export function t(key: TranslationKey, params: TranslationParams = {}): string {
   const template = dictionaries[currentLocale][key] ?? zhCN[key] ?? key;
   return template.replace(/\{(\w+)\}/g, (match, name: string) =>
-    Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match,
+    Object.hasOwn(params, name) ? String(params[name]) : match
   );
 }
 
@@ -61,11 +78,15 @@ export function translateDocument(root: ParentNode = document): void {
 }
 
 export function getAlternateLocale(locale: Locale): Locale {
-  return locale === 'zh-CN' ? 'en-US' : 'zh-CN';
+  if (locale === 'zh-CN') return 'zh-TW';
+  if (locale === 'zh-TW') return 'en-US';
+  return 'zh-CN';
 }
 
 function localeSelfName(locale: Locale): string {
-  return locale === 'zh-CN' ? zhCN['language.zhCN'] : enUS['language.enUS'];
+  if (locale === 'zh-CN') return zhCN['language.zhCN'];
+  if (locale === 'zh-TW') return zhTW['language.zhTW'];
+  return enUS['language.enUS'];
 }
 
 function syncLanguageSwitchers(): void {
@@ -105,9 +126,15 @@ export function setLocale(locale: Locale, options: { persist?: boolean } = {}): 
     syncLanguageSwitchers();
   }
   if (options.persist !== false && typeof localStorage !== 'undefined') {
-    try { localStorage.setItem(STORAGE_KEY, locale); } catch { /* storage may be disabled */ }
+    try {
+      localStorage.setItem(STORAGE_KEY, locale);
+    } catch {
+      /* storage may be disabled */
+    }
   }
-  listeners.forEach((listener) => listener(locale));
+  listeners.forEach((listener) => {
+    listener(locale);
+  });
 }
 
 export function onLocaleChange(listener: (locale: Locale) => void): () => void {
@@ -117,7 +144,11 @@ export function onLocaleChange(listener: (locale: Locale) => void): () => void {
 
 export function initI18n(): Locale {
   let storedLocale: string | null = null;
-  try { storedLocale = localStorage.getItem(STORAGE_KEY); } catch { /* storage may be disabled */ }
+  try {
+    storedLocale = localStorage.getItem(STORAGE_KEY);
+  } catch {
+    /* storage may be disabled */
+  }
   const locale = resolveLocale({
     urlLocale: new URLSearchParams(window.location.search).get('lang'),
     storedLocale,

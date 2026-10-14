@@ -37,77 +37,95 @@
     <br/>
     <img src="https://img.shields.io/badge/%E2%96%B6_Click_to_Play_Video-00A1D6?style=for-the-badge&logo=bilibili&logoColor=white" alt="Play" />
   </a>
-  <p><sub>Video duration 8:27 · Full CloudSSH walkthrough</sub></p>
+  <p><sub>Video duration 19:48 · Full CloudSSH walkthrough</sub></p>
 </div>
 
 ## Table of Contents
+
+<details>
+<summary><b>Click to expand Table of Contents</b></summary>
 
 - [Highlights](#highlights)
 - [Features](#features)
 - [Architecture](#architecture)
 - [Quick Deployment](#quick-start)
-  - [GitHub Integration](#method-1-deploy-via-github-integration-recommended)
+  - [GitHub Integration](#recommended-deploy-via-github-integration)
     - [Automatically Sync Upstream](#optional-automatically-sync-upstream-releases)
-  - [Local CLI Deployment](#method-2-local-cli-deployment)
+  - [Configurable Environment Variables](#configurable-environment-variables)
   - [Configure Turnstile](#optional-configure-turnstile-human-verification)
   - [Configure GitHub OAuth](#optional-configure-github-oauth-login--server-management)
 - [Development](#development)
   - [Local Development](#local-development)
-  - [Tech Stack](#tech-stack)
 - [Contributors](#contributors)
 - [License](#license)
 
+</details>
+
 <a id="highlights"></a>
+
 ## Highlights
 
 ### Ultimate Serverless
 
-- **Zero Server Cost**: Pure frontend deployment + Cloudflare Workers, no need to build your own backend servers.
-- **Edge Acceleration**: Benefit from Cloudflare's global edge network, enjoying low-latency SSH connections from anywhere.
+- **Zero Server Cost**: Pure frontend + Cloudflare Workers, no backend servers to maintain.
+- **Edge Acceleration**: Cloudflare's global edge network routes connections to the nearest location for low-latency SSH.
 
 ### Out of the Box
 
-- **One-Click Deployment**: Simply fork this repository, then complete the project build and deployment with a few clicks in the Cloudflare Dashboard.
-- **Modern Frontend Stack**: TypeScript + Vite + Tailwind CSS, paired with xterm.js to provide a silky smooth terminal experience.
+- **One-Click Deployment**: Fork the repo and connect GitHub in the Cloudflare Dashboard to build and deploy automatically, no local environment needed.
+- **Modern Tech Stack**: TypeScript + Vite + Tailwind CSS + xterm.js, balancing performance and maintainability.
 
 ### Secure and Reliable
 
-- **Encrypted Transport in Two Segments**: The browser-to-Cloudflare Worker segment uses HTTPS/WSS, while the Worker-to-target-host segment uses the complete SSH-2.0 protocol. The SSH segment supports Curve25519-SHA256 (preferred) and ECDH-NISTP256 key exchange, AES-256-GCM (preferred) / AES-128-GCM / AES-256-CTR encryption, and HMAC-SHA2-256/512 integrity verification.
-- **Multi-Algorithm Host Key Verification**: Supports Ed25519, ECDSA P-256/P-384/P-521, and RSA signature verification, with SHA-256 fingerprint display on first connection (TOFU mode).
-- **Security Hardening**: Built-in SSRF protection against IPv6 and reserved addresses. `/api/ssh` uses a bounded, per-Worker-isolate in-memory limiter for traffic shedding, while connection authorization remains the responsibility of Turnstile or one-time connection tokens. Saved server credentials are encrypted with AES-256-GCM in per-user Durable Object SQLite storage.
-- **Human Verification**: Supports Cloudflare Turnstile verification to prevent malicious bot abuse.
-- **Isolated Session State**: Each SSH terminal session is managed by an independent Cloudflare Durable Object. Browser WebSockets use the Hibernation API entry pattern, but an active outbound SSH TCP connection keeps the Durable Object awake for the duration of the session.
-- **Internal Flow for Saved Credentials**: When connecting to a saved server, UserDBDO decrypts the credential on the server side and passes it internally to SSHSessionDO through a one-time connection token; the browser never receives the plaintext credential. Anonymous connections and the initial save still send user input to the Worker over HTTPS/WSS.
+- **Two-Segment Encryption**: HTTPS/WSS between browser and Worker; the Worker-to-server segment uses the full SSH-2.0 protocol (Curve25519-SHA256/ECDH-NISTP256 key exchange, AES-256-GCM/CTR encryption, HMAC-SHA2 integrity).
+- **Host-Key Verification**: Ed25519/ECDSA P-256/P-384/P-521/RSA signature checks with a SHA-256 fingerprint on first connection (TOFU).
+- **Defense in Depth**: IPv6/reserved-address SSRF blocking plus DNS-rebinding protection, bounded in-memory rate limiting, Turnstile verification, and AES-256-GCM encryption for saved credentials in per-user SQLite storage.
+- **Session Isolation**: Each terminal session runs in an independent Durable Object; an active outbound SSH TCP connection keeps it awake.
+- **Internal Credential Flow**: On one-click connect, the server decrypts credentials and hands them to the session via a one-time token; the browser never sees the plaintext.
 
 <a id="features"></a>
+
 ## Features
+
+<details>
+<summary><b>Click to expand full feature list (Custom SSH Stack, Jump Chains, One-Time Sharing, SFTP, AI Agent, etc.)</b></summary>
 
 - **Pure TypeScript SSH-2.0 Implementation**: Fully self-developed SSH protocol stack, with no dependency on any third-party SSH libraries, implementing all cryptographic operations based on Web Crypto API.
 - **Multi-Algorithm Key Exchange**: Supports Curve25519-SHA256 (preferred) and ECDH-NISTP256 KEX algorithms, compatible with various SSH servers (including Dropbear).
+- **Reliable Key Transitions and Packet Framing**: Re-evaluates encryption and authentication state for every packet, including servers that return `SSH_MSG_NEWKEYS` and the first encrypted packet in the same TCP chunk.
 - **IPv4/IPv6 Dual Stack**: Full support for both IPv4 and IPv6 address connections, including automatic handling of IPv6 bracket notation.
 - **Multiple Auth Methods**: Supports standard SSH password authentication, multi-round RFC 4256 `keyboard-interactive` authentication, and OpenSSH-format Ed25519, ECDSA P-256/P-384/P-521, and RSA private keys. Interactive authentication supports passwords, OTPs, multiple prompts, and a second factor after public-key authentication. Server prompts appear in a connection-bound safety dialog, and a saved password is substituted only after an explicit user action. RSA uses RSA-SHA2-256/512 by default; legacy `ssh-rsa` SHA-1 is allowed only through explicit compatibility configuration.
 - **SSH Jump Hosts / Bastions**: Signed-in users may select another saved server as a jump host. CloudSSH builds each layer with the standard RFC 4254 `direct-tcpip` channel and does not require `ssh`, `nc`, or `socat` on the remote host. Up to 3 jump hosts are supported; the final target's terminal, SFTP, and AI Agent use the complete encrypted chain. Authentication and path-scoped host-key verification run independently at every hop.
+- **Cloudflare Tunnel (Zero Trust Tunnel)**: Connect directly to intranet servers without public IPs or open ports (homelabs, private LANs) using Cloudflare Tunnel (cloudflared), eliminating the need for a jump host. Leverages the standard WebSocket Carrier architecture to transparently stream SSH binary frames, supporting optional Cloudflare Zero Trust Service Tokens (Client ID / Client Secret). The proprietary SSH stack, TOFU host keys, SFTP, and AI Agent operate seamlessly over the tunnel.
 - **One-Time SSH Access Sharing**: Optionally lets signed-in users share saved servers. The link contains only a 256-bit random capability, never the host, username, password, private key, or jump route. Only its hash is stored; it can be claimed once and has separate claim and session lifetimes. Shared sessions allow the terminal and SFTP while the backend disables AI Agent, OS detection, host-key mutation, and reconnect. Owners can revoke live access and review share-only lifecycle, SFTP, and terminal-output records.
 - **MitM Protection (TOFU)**: Automatically extracts and prints the server's Host Key (SHA-256 fingerprint) on the first connection, supporting Ed25519/ECDSA/RSA signature verification, and caches known host keys locally and via API to prevent MitM on future connections.
 - **Geek Terminal Experience**: Powered by `@xterm/xterm` and the `@xterm/addon-webgl` hardware acceleration rendering engine, ensuring silky smooth scrolling even with massive log outputs.
 - **Reliable Terminal Clipboard Interaction**: Completing a terminal selection with a mouse automatically copies it, and right-click pastes directly. On touch devices, tapping Copy in the shortcut bar enters selection mode; drag across terminal text and tap Copy again to finish, avoiding unreliable long-press selection, while Paste remains a separate action. Paste data follows xterm.js's native input pipeline, emits bracketed-paste control sequences only when the remote application enables that mode, and normalizes line endings for compatibility with Vim and regular shells.
-- **Mobile Terminal Support**: Phones and tablets get dynamic visual-viewport sizing, soft-keyboard and safe-area handling, iOS Chinese IME compatibility, a compact action bar, one-shot Ctrl/Alt, Esc/Tab/arrows/Home/End/PgUp/PgDn shortcuts, and full-screen Agent/SFTP panels. After a page returns from the background, CloudSSH actively validates the WebSocket and replaces connections that only appear open. Anonymous sessions rebuild SSH from the current in-memory credentials, while signed-in saved servers request a fresh one-time connection token; the UI and terminal input return to the connected state only after `shell_ready`. Users may explicitly request fullscreen landscape; unsupported orientation locks fall back to a manual rotation hint without changing desktop layouts. If the mobile OS completely discards the page, the current shell cannot be resumed seamlessly.
-- **Customizable UI**: Theme V2 includes Standard Dark, Standard Light, Cyberpunk, Glacier, and Gruvbox. The companion [GitHub Pages theme editor](https://newbietan.github.io/CloudSSH/) provides live controls for colors, shape, density, font, shadows, motion, and button/input/card/tab styles, with previews for login, server list, terminal + SFTP, and the AI Agent panel. Themes are imported, exported, backed up, and shared as JSON files. Signed-in users sync imported themes to their account for cross-browser restoration, while anonymous users keep them in the current browser only.
-- **SFTP Graphical File Manager**: Integrated with a complete SFTP v3 file transfer protocol, providing a graphical file browser interface. Supports directory browsing, file upload/download, creating new folders, file renaming, and deletion, plus plain selection, `Cmd/Ctrl` toggle selection, `Shift` range selection, select all, batch file downloads, and batch deletion. Built on the SSH subsystem, it runs alongside terminal sessions without interference and supports download queues and upload cancellation.
+- **Mobile Terminal Support**: Phones and tablets get dynamic visual-viewport sizing, soft-keyboard and dynamic safe-area calculations (`env(safe-area-inset-*)` for notches and Dynamic Island), iOS Chinese IME compatibility, a compact action bar, one-shot Ctrl/Alt, Esc/Tab/arrows/Home/End/PgUp/PgDn shortcuts, and full-screen Agent/SFTP panels. All three side drawers (SFTP, Agent, snippets) support touch right-swipe to close via their headers, avoiding collisions with iOS system edge gestures and vertical scroll contention; touch interactions feature active press-scale feedback without native tap-highlight flash, touch targets expand to ~36px under coarse pointers, and scrollable drawer containers prevent overscroll rubber-banding (`overscroll-behavior-y: contain`). On narrow screens, the AI Agent header and quick prompt chips dynamically wrap and fold to prevent clipping. After a page returns from the background, CloudSSH actively validates the WebSocket and replaces connections that only appear open. Anonymous sessions rebuild SSH from the current in-memory credentials, while signed-in saved servers request a fresh one-time connection token; the UI and terminal input return to the connected state only after `shell_ready`. Users may explicitly request fullscreen landscape; unsupported orientation locks fall back to a manual rotation hint without changing desktop layouts. If the mobile OS completely discards the page, the current shell cannot be resumed seamlessly.
+- **Customizable UI & Liquid Segmented Controls**: Theme V4 offers built-in Standard Dark, Standard Light, Cyberpunk, and macOS 26-inspired Liquid Glass themes. The user space header and terminal action bar feature floating glass dynamic islands and liquid segmented controls, integrating SFTP, custom commands, and AI Agent drawers into a unified pill capsule driven by a shared 1D physics spring engine (`spring.ts`, using Euler numerical integration) with a smooth 3D liquid lens slider for seamless mutually exclusive drawer toggling. Pointer specular spotlights are generalized across all themes (rAF-throttled CSS variable transmission, automatically bypassed on touch devices for power savings), accompanied by staggered card and row entrance animations, cold-loading skeleton screens (with complete ARIA accessibility attributes), global unified `:focus-visible` theme rings, and W3C multi-layer box-shadow syntax compatibility fixes. V4 adds gradient/mesh background layers (with a readability scrim and a slow drift animation), a scanline/flicker/glow/noise effect registry, an independent surface-blur and saturation tier (`saturate(180%)` + specular inner highlights), and typography scaling, with full support for `prefers-reduced-motion` and `data-ui-motion` tiers. The companion [GitHub Pages theme editor](https://newbietan.github.io/CloudSSH/theme-editor/) provides live controls for colors, shape, density, font, shadows, motion, background layers, effects, and button/input/card/tab styles, with previews for login, server list, terminal + SFTP, and the AI Agent panel. The theme segmented bar persistently displays 5 options (4 built-in + 1 Custom), with the standalone upload button removed. Clicking Custom when no theme has been uploaded opens a management modal prompting upload; clicking Custom while already active opens the modal to manage multiple themes (color swatches preview, instant switching, deletion confirmation, up to 20 custom themes). Signed-in users sync their theme library to the cloud for cross-browser restoration, while anonymous users keep them in the current browser only.
+- **SFTP Graphical File Manager**: Integrated with a complete SFTP v3 file transfer protocol, providing a graphical file browser interface. The toolbar features hierarchical path breadcrumbs navigation (click to jump directly to parent directories, click empty space to toggle absolute path text input), and file lists support bidirectional sorting by name, size, and modified time (directories stay pinned to the top). Supports one-click creation of new blank files with automatic CodeMirror editor opening. Supports directory browsing, file upload/download, creating new folders, file renaming, and deletion, plus plain selection, `Cmd/Ctrl` toggle selection, `Shift` range selection, select all, batch file downloads, and batch deletion. Double-clicking files is handled intelligently (text files open directly in the online editor, binary or oversized files automatically route to the serial download queue). Built-in CodeMirror online editor edits remote text files in place (≤2MB; UTF-8 editable, GBK/GB18030 detected as read-only), preserving the original line endings and BOM, with automatic remote-change detection and an explicit overwrite confirmation before saving, as well as line-wrapping preference toggling in the footer. Common configs (shell/YAML/JSON/Python/Markdown/HTML/CSS/Dockerfile/systemd, etc.) get syntax highlighting. Built on the SSH subsystem, it runs alongside terminal sessions without interference and supports download queues and upload cancellation.
 - **Native File Transfer**: Integrated with [trzsz.js](https://github.com/trzsz/trzsz.js), supporting `trz` (upload) / `tsz` (download) commands for file transfer, fully compatible with tmux sessions. Also supports drag-and-drop file upload to the terminal, directory transfer, and resumable transfers. (Requires [trzsz](https://trzsz.github.io/) installed on the remote server)
-- **GitHub OAuth Integration**: Supports GitHub login, allowing users to save and manage frequently used SSH servers for one-click connections. Each server can have up to 10 normalized tags; the list supports instant search by name, host, or username, tag filtering, and pagination with 9 server cards per page.
+- **Multilingual UI**: Ships built-in Simplified Chinese, Traditional Chinese, and English translations, automatically following the browser language with a manual override; the choice is persisted via a URL parameter or local storage (`cloudssh_locale`).
+- **GitHub OAuth Integration**: Supports GitHub login, allowing users to save and manage frequently used SSH servers for one-click connections; supports one-click server configuration cloning (Duplicate Server) with sanitized credentials. Each server can have up to 10 normalized tags; the list supports instant search by name, host, or username, tag filtering, and responsive pagination (9 cards per page on desktop, 6 on tablets, 3 on mobile).
+- **Slide-Over Command Snippet Drawer & Category Management**: Completely redesigned into a slide-over drawer panel matching the SFTP layout, keeping the active terminal fully visible side-by-side. Features horizontal **Category Chips** for deduplicated count aggregation and filtering, `<datalist>` category autocompletion on the collapsible entry form, and real-time fuzzy search. Supports `{{var}}` dynamic parameter placeholders with parameter entry dialogs, one-click plain text copying, and filling into or executing directly on the active terminal. Snippets are stored with per-`user_id` row isolation in `UserDBDO` (name ≤50, command ≤2000, category ≤30, ≤100 per user); anonymous users fall back to local `localStorage`. Reachable from desktop and mobile toolbars, and hidden in one-time share sessions.
 - **Automatic Server OS Detection**: When a signed-in user first connects to a saved server without an OS record, CloudSSH uses a separate SSH exec channel after the terminal is ready to read `/etc/os-release` or `uname`, then shows the corresponding system icon on the server card. Detection runs in the background without blocking the terminal. Only recognized results are saved; unknown results are retried naturally on the next connection, and changing the host or port clears stale results. Anonymous connections do not run this check. The read-only command may appear in the target server's SSH audit logs.
 - **Private IP Display and Quick Copy**: Valid IPv4 and IPv6 addresses are visually masked in the saved-server list and connection status bar to reduce accidental disclosure in demos or screenshots. The complete connection address remains available through mouse or keyboard copy. Hostnames remain unchanged; visual masking is not encryption or access control.
-- **Single-Page Multi-Tab Session**: Switch between multiple independent SSH terminal and SFTP instances within a single browser tab, with isolated sandbox environments.
+- **Single-Page Multi-Tab Session**: Switch between multiple independent SSH terminal and SFTP instances within a single browser tab, with isolated sandbox environments. Tabs support double-click inline renaming (Enter to save, Esc or empty input to cancel and restore original name, synchronized immediately to the header), plus a right-click context menu (rename tab, duplicate session to new tab, close other tabs, close tab). While on the server list or anonymous connection page, a toolbar/form button returns you to an established SSH session in one click, and pressing `Esc` does the same when the terminal is hidden; the button appears and hides along with the tab count.
 - **Secure Connection History**: Saves last 5 connection records locally. Credentials (passwords/private keys) can be client-side encrypted using locally derived AES-256-GCM keys.
 - **Dual-Segment Latency & Colo Display**: Instantly and periodically monitor WebSocket RTT (client to CF), physical latency (CF to SSH host), and the current Cloudflare datacenter code (e.g. `CF-LAX`) on the status bar, with green, yellow, and red indicators for network quality.
 - **Smart Region Scheduling (locationHint)**: Queries IPinfo when a direct server is saved, persists the inferred Durable Object region, and reuses it on connection without another runtime geo lookup. With SSH jumps, only the outermost entry reached directly by Cloudflare is inferred; downstream private servers do not trigger a lookup and inherit placement from that entry. Failures fall back to Cloudflare's default placement, and users may manually override direct-entry regions. _Note: automatic inference sends the direct entry's host information to the third-party IPinfo service. locationHint is a Cloudflare best-effort feature and may fall back to a nearby region when capacity is unavailable._
-- **In-Terminal Text Search**: Real-time log search support via `Ctrl+Shift+F`.
+- **In-Terminal Text Search & Shortcuts**: Real-time log search support via `Ctrl+Shift+F` (or `Cmd+F` on macOS); clear terminal screen and scrollback buffer via `Cmd+K` (macOS) / `Ctrl+Shift+K` (Win/Linux) without conflicting with shell-native `Ctrl+K`.
 - **Terminal Log Export**: Download the entire screen buffer of the active terminal session as a `.txt` file with a single click on the header download button, avoiding browser freezes when selecting long logs.
-- **AI Agent Assistant**: Built-in AI Agent sidebar with BYOK (Bring Your Own Key) support for OpenAI-compatible APIs (e.g., DeepSeek). Provides 8 specialized operations tools: execute commands, read terminal context, detect server environment, list processes, manage systemctl services, manage Docker containers, user confirmation, and structured report output. Selecting terminal text exposes an “Ask AI assistant” action that attaches the complete selection to the current tab's composer instead of sending it immediately. The attachment shows its source and size, can be expanded, replaced, or removed, and is sent only after the user adds a question. Terminal selections are explicitly treated as untrusted analysis data—not action authorization—and cannot override user instructions. Agent code blocks support one-click copy, while safe single-line Shell commands can be filled into the active terminal without being executed automatically. Supports LLM streaming output (character-by-character display). Dangerous commands are automatically blocked or require confirmation in a safe, reject-by-default dialog. **Thinking Process Container**: During multi-step tasks, displays the latest 1-2 commands in real-time, auto-collapses with total step count after completion, expands to show full execution history.
+- **AI Agent Assistant & Server Memory System**: Built-in AI Agent sidebar with BYOK (Bring Your Own Key) support for stateless Responses APIs (`store: false`), natively compatible with official OpenAI (GPT-4o, o1, o3-mini, etc.) and compatible aggregators implementing the standard Responses specification (such as OpenRouter). Legacy Chat Completions endpoints are not supported. Context history, execution facts, and structured server memory are maintained locally by CloudSSH rather than relying on upstream provider persistence, eliminating remote state leakage and session pollution. The configuration modal features a modern custom Combobox dropdown (full listing, instant fuzzy search, one-click clearing, and multi-theme adaptivity) with secure, token-free model retrieval using stored credentials, fortified by strict Base URL binding against credential exfiltration, same-origin CSRF defense, and sensitive token sanitization. Features Quick Prompt Chips (Analyze Error, System Load, Network Ports, Docker Status) for instant diagnostic prompt insertion with auto-focus. Provides 7 specialized operations tools (execute commands, read terminal context, detect environment, list processes, systemctl management, Docker management, and user confirmation). Supports attaching terminal selections as untrusted context snapshots, one-click code block copying, safe single-line command filling, LLM streaming output, and collapsible thinking process containers with multi-level safety controls.
+  - **Dual-Track Long-Term Memory**: Features accurate time anchoring and user-local timezone conversion (Today, Yesterday, N days ago). Divided into **Work Logs** (rolling activity history that automatically fuses consecutive troubleshooting tasks via `update_latest` to prevent fragmented spam) and **Context Knowledge & Credentials** (automatically distills tokens, passwords, ports, and path configs so future tasks reuse them directly without repeated questioning; backed by key normalization and atomic upserts).
+  - **Decoupled Short/Long-Term Memory**: In-session summaries exclusively track active task goals and unresolved decisions, while persistent server memory archives ops history and configuration entities, eliminating redundant prompt bloat.
+  - **Unobtrusive Drawer UI**: Integrated into a dedicated "Work Logs & Knowledge" drawer panel. Work log cards feature two-line truncation, full-text hover tooltips, and click-to-expand; sensitive credentials are masked by default with one-click visibility toggling, quick copying, and deletion.
 - **Quality Gates**: Before deploying either `test` or `main`, GitHub Actions performs frozen-lockfile installation, Worker/frontend type checking, unit and integration tests, reproducible frontend builds, Playwright browser E2E, and axe accessibility regression. Any failure blocks deployment.
 
+</details>
+
 <a id="architecture"></a>
+
 ## Architecture
 
 ### System Architecture
@@ -124,9 +142,9 @@ flowchart TB
     subgraph "Cloudflare Edge Network"
         Worker["Worker<br/>Routing + API"]
         SSH_DO["SSHSessionDO<br/>SSH Session Management"]
-        User_DO["UserDBDO<br/>User Data Management"]
+        User_DO["UserDBDO<br/>User Data / Snippets / Long-Term Memory"]
         Share_DO["SSHShareDO<br/>Share Capability + Audit"]
-        AgentCore["AgentCore<br/>AI Control Loop"]
+        AgentCore["AgentCore<br/>AI Control Loop + Context Management"]
     end
 
     subgraph "Target Server"
@@ -135,7 +153,7 @@ flowchart TB
 
     UI <-->|"WebSocket<br/>Terminal I/O"| Worker
     SFTP <-->|"WebSocket<br/>SFTP Data"| Worker
-    Agent <-->|"WebSocket<br/>Agent Messages"| Worker
+    Agent <-->|"WebSocket<br/>Agent Messages / Memory Updates"| Worker
     Trzsz <-->|"trzsz Protocol"| UI
     Worker <-->|"WebSocket"| SSH_DO
     Worker <-->|"Internal API"| User_DO
@@ -143,66 +161,12 @@ flowchart TB
     SSH_DO -->|"Lifecycle / SFTP / Terminal Output"| Share_DO
     SSH_DO <-->|"TCP Socket<br/>@cloudflare/sockets"| SSH
     SSH_DO <-->|"Exec Channel"| AgentCore
+    AgentCore <-->|"Work Logs & Knowledge"| User_DO
     AgentCore <-->|"LLM API"| External["External LLM Service"]
 ```
 
-### Core Components
-
-| Component | File | Responsibility |
-|-----------|------|----------------|
-| **Worker Entry** | `src/worker/index.ts` | HTTP routing, API handling, WebSocket upgrade |
-| **SSHSessionDO** | `src/worker/durable-object.ts` | SSH session lifecycle management, SSRF protection |
-| **UserDBDO** | `src/worker/user-db.ts` | Per-GitHub-user data, sessions, server configs, normalized tags, and encrypted credentials (SQLite) |
-| **SSHShareDO** | `src/worker/share-do.ts` | One-time capability, short-lived connection ticket, expiry/revocation state, and the share-session-only audit log |
-| **IP Geo Inference** | `src/worker/ip-geo.ts` | Infers the Cloudflare-direct entry IP at save time and maps it to a DO locationHint; downstream jump nodes are not queried |
-| **OS Detection** | `src/worker/os-detect.ts` | Parses remote system identity and normalizes persistable OS keys |
-| **SSHSession** | `src/worker/ssh-session.ts` | SSH protocol state machine (connect→version→kex→auth→interactive) |
-| **SSH Jump Stream** | `src/worker/direct-tcpip-stream.ts` | Backpressured duplex byte stream that runs nested SSH over an RFC 4254 `direct-tcpip` channel |
-| **SSH Protocol Stack** | `src/ssh/*.ts` | Pure TypeScript SSH-2.0 implementation (transport, crypto, auth, channels) |
-| **SFTP Handler** | `src/worker/sftp-handler.ts` | SFTP protocol operations, task queue, concurrent downloads, upload tracking and cancellation |
-| **SFTP Protocol** | `src/ssh/sftp.ts` / `sftp-types.ts` | SFTP v3 protocol client, packet parsing and type definitions |
-| **Frontend Terminal** | `frontend/src/terminal.ts` | xterm.js wrapper, native right-click paste, dynamic RTT heartbeats, three-color network quality indicators, terminal search, selection-to-Agent actions, and WebSocket management |
-| **Mobile Controller** | `frontend/src/mobile-terminal.ts` / `mobile-input.ts` | Dynamic viewport sizing, iOS IME fallback, touch shortcuts, clipboard actions, and optional fullscreen landscape |
-| **Tab Manager** | `frontend/src/tab-manager.ts` | Single-page coordinator for isolated terminal, SFTP, Agent, and pending-context state in each session tab, including copyable masked-IP display |
-| **Server List** | `frontend/src/server-list.ts` | Server-card management, search, tag filtering, private IP display, and pagination with 9 items per page |
-| **SSH Share UI** | `frontend/src/share-manager.ts` / `share-session.ts` | Owner-side creation, revocation, and audit viewing plus explicit recipient consent and one-time claim |
-| **Host Display** | `frontend/src/host-display.ts` | Validates IPv4/IPv6 literals and produces consistent privacy-masked display text |
-| **SFTP Panel** | `frontend/src/sftp-panel.ts` | Graphical file manager UI with multi-selection, batch download/delete, transfer queues, and cancellation |
-| **AI Agent** | `src/worker/agent/core.ts` | AI control loop: LLM streaming calls, tool execution, environment detection, terminal context reading |
-| **Agent Tools** | `src/worker/agent/tools.ts` | 8 operations tools (execute command, terminal context, environment detection, process list, service management, Docker management, user confirmation, report output) |
-| **Agent Safety** | `src/worker/agent/safety.ts` | Two-layer security: direct blocking (rm -rf /, fork bomb, etc.) + confirmation prompts (rm, shutdown, iptables, etc.) |
-| **Agent Panel** | `frontend/src/agent/agent-panel.ts` | AI assistant sidebar UI with terminal-selection attachments, streaming output, Markdown rendering, code-block copy and safe terminal fill, collapsible thinking process, and safe confirmation dialogs |
-| **Agent Selection Context** | `frontend/src/agent/terminal-selection-context.ts` | Preserves terminal-selection snapshots and composes user questions with an explicit untrusted-data boundary |
-| **AI Config** | `frontend/src/ai-config.ts` | AI model configuration modal for Base URL / API Key / model selection |
-| **Region Options** | `frontend/src/regions.ts` | Shared DO locationHint region options component for server management and anonymous connection forms |
-
-### SSH Protocol Implementation
-
-This project implements a complete SSH-2.0 protocol stack:
-
-| Layer | Implementation | Supported Algorithms |
-|-------|----------------|---------------------|
-| **Key Exchange** | `kex-curve25519.ts` / `kex-ecdh.ts` | curve25519-sha256, ecdh-sha2-nistp256 |
-| **Data Encryption** | `crypto.ts` | aes256-gcm, aes128-gcm, aes256-ctr, aes192-ctr, aes128-ctr |
-| **Integrity** | `crypto.ts` | hmac-sha2-256, hmac-sha2-512, hmac-sha1 |
-| **Host Keys** | `ssh-session.ts` | Ed25519, ECDSA P-256/P-384/P-521, RSA |
-| **User Auth** | `auth.ts` | Password and RFC 4256 keyboard-interactive; Ed25519, ECDSA P-256/P-384/P-521, and RSA-SHA2 private-key authentication |
-| **Channel Management** | `channel.ts` | Session, `direct-tcpip`, SFTP subsystem, PTY, shell, and window-change channels |
-| **SFTP Protocol** | `sftp.ts` / `sftp-types.ts` | SFTP v3 file transfer protocol (directory browsing, upload, download, delete, rename) |
-
-### Data Flow
-
-1. The user enters the host IP, username, and password on the frontend (or selects a saved server via GitHub OAuth).
-2. The frontend establishes a WebSocket connection with the backend Durable Object.
-3. SSHSessionDO receives the credentials and uses `@cloudflare/sockets` to connect to the direct target or outermost jump host.
-4. When a jump path exists, SSHSession authenticates each hop and carries the next SSH session over RFC 4254 `direct-tcpip`; only the final target opens PTY, Shell, SFTP, and Agent exec channels.
-5. Terminal data travels over WSS between the browser and Worker, and over SSH between the Worker and target server; the Worker bridges the two protocol segments and processes SSH.
-6. SFTP file management runs on a separate SSH subsystem channel, supporting directory browsing, file upload/download, and other operations.
-7. For a saved server without an OS record, SSHSession performs one read-only system check through a separate exec channel after the Shell is ready. Recognized results are stored in UserDBDO and sent to the frontend; unknown results are not stored.
-8. The AI Agent receives the user question and optional terminal-selection context via WebSocket. The selection is marked as untrusted analysis data before AgentCore calls the external LLM API, executes approved commands through SSH exec channels, and streams results back to the frontend.
-9. A one-time share is atomically claimed by SSHShareDO and exchanged for a short-lived connection ticket. The share session writes lifecycle, SFTP, and terminal-output events to its isolated audit store, and closes on expiry, revocation, or audit failure.
-
 <a id="quick-start"></a>
+
 ## Quick Deployment
 
 ### Prerequisites
@@ -212,13 +176,13 @@ This project implements a complete SSH-2.0 protocol stack:
 
 ### Steps
 
-#### Method 1: Deploy via GitHub Integration (Recommended)
+#### Recommended: Deploy via GitHub Integration
 
 <div align="center">
   <a href="https://dash.cloudflare.com/?url=https://github.com/newbietan/CloudSSH">
     <img src="https://img.shields.io/badge/Deploy_to_Cloudflare-FF6633?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Deploy to Cloudflare">
   </a>
-  <p>Click the button to jump to the Cloudflare console — authorize your GitHub account and deploy automatically, no local environment required</p>
+  <p>Click the button to jump to the Cloudflare console, authorize your GitHub account, and deploy automatically</p>
 </div>
 
 1. **Fork this repository** to your GitHub account.
@@ -240,39 +204,52 @@ A fork can use the built-in `Sync upstream` GitHub Actions workflow to periodica
    - Value: `true`
 4. To sync immediately, open **Actions → Sync upstream → Run workflow**. Manual runs do not require the variable above.
 
-> **Sync behavior**: The workflow uses GitHub's fork synchronization API, requires no PAT, and never force-overwrites the branch. If your `main` branch cannot be merged with upstream automatically, the job fails while preserving the existing code and the conflict must be resolved manually. Avoid editing the deployment `main` branch directly, and keep domains, secrets, and environment variables in the Cloudflare Dashboard.
+> **Sync behavior**: If upstream workflows change, automatic synchronization may fail. In that case, simply synchronize the repository manually once.
 
-#### Method 2: Local CLI Deployment
+#### Configurable Environment Variables
 
-1. **Clone the Repository**
-   ```bash
-   git clone https://github.com/newbietan/CloudSSH.git
-   cd CloudSSH
-   ```
+All feature flags and security controls are managed through Worker environment variables configured in the Cloudflare Dashboard under **Settings → Variables and Secrets** (sensitive credentials should use the encrypted **Secret** type) and applied immediately upon the next deployment:
 
-2. **Install Dependencies**
-   ```bash
-   npm install -g pnpm
-   pnpm install
-   cd frontend && pnpm install
-   ```
+| Environment Variable | Required | Default | Description | Recommendations & Notes |
+| --- | --- | --- | --- | --- |
+| `IDLE_TIMEOUT` | Optional | `30m` | User inactivity idle timeout duration. Automatically closes the session and releases the Durable Object when no keyboard input, SFTP transfer, or AI task occurs. | **Strongly recommended to keep default or configure**. Prevents abandoned tabs from burning through Cloudflare's daily 13,000 GB-s free DO quota. Supports `30m`, `1h`, `1800s`, `1800` (raw numbers parsed as seconds); set to `0` to disable; an in-terminal warning appears 60s before timeout, and pressing any key immediately resets the timer. Shipped by default via wrangler.toml `[vars]`; customize by editing the config file. |
+| `GITHUB_CLIENT_ID` | Required if login enabled | None | GitHub OAuth Application Client ID; enables multi-user login and cloud-synchronized server / snippet management. | Public identifier. Must be used together with `GITHUB_CLIENT_SECRET` and `BASE_URL`. When omitted, the login entry point is automatically hidden without affecting anonymous SSH. |
+| `GITHUB_CLIENT_SECRET` | Required if login enabled | None | GitHub OAuth Application Client Secret used by the server to safely exchange user authorization codes for access tokens. | **Sensitive credential; strongly recommended to set as Secret type in Cloudflare Dashboard**. Never expose or commit to public repositories. |
+| `BASE_URL` | Required if login enabled | None | Full public origin URL of the deployed application (e.g. `https://ssh.example.com`), used to construct OAuth authorization redirect callbacks. | Must exactly match the Authorization callback URL domain configured in your GitHub OAuth App, without trailing slashes `/`. Falls back to the request Host header if omitted. |
+| `GITHUB_ALLOWED_USER_IDS` | Optional | None (unrestricted) | Comma-separated allowlist of GitHub **numeric user IDs** permitted to sign in (e.g. `83105156,6236783`). | **Core security control for private instances**. When unset, any GitHub user can log in; once set, non-allowlisted users are rejected (fails closed). Obtain your numeric ID by visiting `https://api.github.com/users/<username>` and checking the `id` field. |
+| `ADMIN_PASSWORD_HASH` | Required if password login enabled | None | Single-admin password sign-in credential (format: `pbkdf2$sha256$<iterations>$<salt>$<verifier>`; generate in-browser from your own custom password via the “Admin password sign-in setup” link at the bottom of the auth form, or locally via `pnpm run hash-password`). Any non-empty value enables password mode: mutually exclusive with GitHub login and takes precedence; the instance then admits only the local admin account, with feature parity to GitHub login. | **Sensitive credential; always set as Secret type**. Clear or remove the variable to instantly revert to GitHub login (GitHub configuration and data are untouched); changing the value rotates the password and immediately invalidates all existing sessions. Password mode does not change anonymous SSH behavior — combine with `REQUIRE_GITHUB_AUTH=true` to force login; enable Turnstile on public deployments for brute-force protection. |
+| `REQUIRE_GITHUB_AUTH` | Optional | `false` | Whether to require sign-in (GitHub or single-admin password session both satisfy) for all terminal connections. When set to `true`, anonymous direct SSH access is completely disabled. | **Recommended for public deployments**. Prevents unauthorized visitors from using your Worker as an open outbound SSH jump proxy. Shipped by default via wrangler.toml `[vars]`; customize by editing the config file. |
+| `TURNSTILE_SITEKEY` | Optional | None | Cloudflare Turnstile human-verification public Site Key. | Public key. Used together with `TURNSTILE_SECRET`. Turnstile verification is automatically disabled if either variable is omitted or empty. |
+| `TURNSTILE_SECRET` | Optional | None | Cloudflare Turnstile human-verification Secret Key used for server-side verification token validation. | **Sensitive credential; recommend storing as Secret type**. Effectively blocks automated crawlers, botnets, and credential stuffing. Not deployed by default (opt in yourself); on Git/CLI-deployed instances, configure via the Dashboard Secret type — secrets are not overwritten by wrangler deploys. |
+| `ENABLE_SSH_SHARING` | Optional | `true` (enabled by default on deploy) | Whether to enable audited one-time SSH sharing. When on, signed-in owners can generate temporary audited access links for saved servers. | Set to `true` by default in wrangler.toml `[vars]` — enabled out of the box for Git-integrated / CLI deployments; set `false` in wrangler.toml to opt out. Shared sessions are strictly constrained (restricted terminal, optional SFTP, no AI Agent, no server metadata mutation) and fully audited; manual Dashboard-upload deployments are unaffected by `[vars]` — add the variable yourself to enable. |
+| `STRICT_HOST_KEY_VERIFY` | Optional | `true` | SSH host-key signature verification mode. Defaults to `true` (fails closed if signature verification fails or key algorithm is unsupported). | **Strongly recommended to keep default `true` in production**. Only set to `false` in development/testing environments when connecting to non-standard legacy servers. Shipped by default via wrangler.toml `[vars]`; customize by editing the config file. |
+| `DEBUG_MODE` | Optional | `false` | Detailed protocol debugging switch. When `true`, outputs detailed handshake and protocol logs in API responses and the frontend terminal. | Declared as `false` in `wrangler.toml`. Only enable temporarily when troubleshooting connection handshakes; keep `false` during regular production operation. |
 
-3. **Login to Cloudflare**
-   ```bash
-   npx wrangler login
-   ```
+> **Configuration Recommendations & Notes**:
+> 1. **Encrypted Secret Storage**: In the Cloudflare Dashboard under *Settings → Variables and Secrets*, it is strongly recommended to store all sensitive variables containing passwords, Secrets, or Keys as **Secret** type. Secrets are stored in Cloudflare's dedicated encrypted storage layer and will not be overwritten when rebuilding or redeploying code.
+> 2. **Credential storage boundary**: Saved SSH credentials, AI API keys, tunnel Service Tokens, and sensitive server memory use AES-GCM storage, but the root encryption secret resides in the same UserDBDO SQLite database (`system_config.encryption_secret`). This avoids plaintext credential columns, but does not protect against a full database leak including the key, compromised database read access, or Worker code execution. It is not independent Secret/KMS protection.
+> 3. **Reserved Variables**: `MAX_CONNECTIONS` is declared as an interface placeholder for future connection budgeting; it is currently unread by runtime code, so do not rely on it.
+>
+> 4. **Terminal output backlog protection**: stdout and stderr share a 4MiB unacknowledged-receipt budget. Overflow, or 60s without valid acknowledgement progress while output is pending, closes the session normally without automatic reconnect. This is not a lifetime output limit or a cost cap for continuously flowing output; receipt ACKs do not mean terminal rendering or file writes have completed. Refresh existing pages after upgrading: older frontends do not send ACKs and will also trigger the guard. Agent approvals also require the new one-shot confirmation ID; older pages cannot approve. Waiting for approval remains subject to `IDLE_TIMEOUT` (`0` explicitly disables it).
+>
+> 5. **SFTP recursive deletion budgets**: Each directory is capped at 10,000 entries and 8MiB of estimated entry memory. The whole tree shares limits of 50,000 entries, 16MiB cumulative estimated entry memory, 100,000 requests, depth 64, and five minutes. Truncation or exhausted budgets fail explicitly rather than partially deleting the truncated directory; earlier completed deletions are not rolled back. Repeated empty batches and malformed packets also fail promptly, with at most five extra seconds for a handle-cleanup attempt.
+>
+> 6. **Wrangler deploy variable authority**: Instances deployed via Git integration / CLI (wrangler) treat `wrangler.toml` as the configuration source of truth — same-name plain-text variables in the Dashboard are overwritten on deploy, while **Secret-type values are unaffected**. `IDLE_TIMEOUT` / `REQUIRE_GITHUB_AUTH` / `ENABLE_SSH_SHARING` / `STRICT_HOST_KEY_VERIFY` ship via `[vars]` by default; customize them directly in `wrangler.toml`. Opt-in variables such as `TURNSTILE` and `ADMIN_PASSWORD_HASH` are best maintained as Dashboard Secrets.
 
-4. **Deploy Production**
-   ```bash
-   pnpm run deploy
-   ```
+#### Optional: Enable Single-Admin Password Sign-In (Alternative to GitHub OAuth)
 
-5. **Deploy Test Environment** (Optional)
-   ```bash
-   pnpm run deploy:test
-   ```
+Prefer signing in with your own custom password instead of GitHub OAuth? The instance then admits a single account — yours:
 
-> **Note**: Both environments bind to Durable Objects with the same `class_name`, but data is completely isolated due to different Worker names. After deployment, you can bind different custom domains for each environment in the Cloudflare Dashboard (Settings → Domains & Routes).
+1. **Generate the hash**: Enter your custom password (≥ 10 characters), confirm it, click "Generate hash", and copy the result. **The password never leaves your browser** — no local tooling required (with a Node environment you can also use `pnpm run hash-password`). Ways to open the generator:
+   - Fresh deployment (no sign-in configured): open your site and click "**Admin password sign-in setup**" at the bottom of the auth form;
+   - Instances already using GitHub sign-in (including `REQUIRE_GITHUB_AUTH=true` forced login): open `https://your-domain/#password-setup` directly — no existing variables need touching;
+   - Password rotation: open `#password-setup`, regenerate, and replace the Dashboard variable.
+2. **Configure the variable**: In the Cloudflare Dashboard → Workers → Settings → Variables and Secrets, add `ADMIN_PASSWORD_HASH` (**Secret** type), paste the generated hash, and save.
+3. **Reload the page**: The GitHub sign-in entry is automatically replaced with "Admin Login". Sign in with your chosen password — feature parity with GitHub login is complete.
+
+> **Common operations**: Change the password by clearing the variable and saving (reverts to the previous mode), then regenerating and pasting a new hash; removing the variable instantly reverts to GitHub OAuth mode, with data on both sides unaffected (data created during password mode is preserved in its own storage).
+
+> **Note**: For local CLI deployment or debugging the Worker, see the Local Development section under Development below.
 
 #### Optional: Configure Turnstile Human Verification
 
@@ -284,10 +261,6 @@ To prevent malicious bot abuse, it is recommended to enable Cloudflare Turnstile
    - `TURNSTILE_SECRET` = your Secret Key
    - `TURNSTILE_SITEKEY` = your Site Key
 4. **Redeploy**: Run the deployment command to apply the configuration.
-
-> **Environment Variable Type Recommendation**: It is recommended to set all environment variables as **Secret** type. Secrets are stored in Cloudflare's encrypted storage, separate from code deployments, and will not be overwritten or lost during redeployments. When adding variables in the Dashboard, simply select the "Secret" type.
-
-> **Note**: Turnstile verification is session-level. After verification, all features are available for the current session. Closing the browser will require re-verification.
 
 #### Optional: Configure GitHub OAuth Login & Server Management
 
@@ -305,11 +278,11 @@ With GitHub OAuth enabled, users can log in with their GitHub account and save/m
    - `BASE_URL` = `https://your-domain.com` (your deployed domain)
    - `GITHUB_CLIENT_SECRET` = your Client Secret
 
-   The following two independent settings are optional:
+   The following three independent settings are optional:
 
    - `GITHUB_ALLOWED_USER_IDS`: Comma-separated GitHub **numeric user IDs** allowed to sign in, for example `83105156,6236783`. When omitted, every GitHub account may sign in. An empty or malformed configured value fails closed and denies every GitHub sign-in.
    - `REQUIRE_GITHUB_AUTH`: Set to `true` to disable anonymous SSH and require a valid GitHub session for every SSH WebSocket. When omitted or set to `false`, anonymous connections remain available.
-   - `ENABLE_SSH_SHARING`: Set to `true` to let signed-in users create one-time links for saved servers. It is disabled by default. Enabling it explicitly permits a bearer of the share capability to open an audited SSH session without signing in to GitHub.
+   - `ENABLE_SSH_SHARING`: Set to `true` to let signed-in users create one-time links for saved servers. Git-integrated / CLI deployments ship `true` via `wrangler.toml` for both production and test; set it to `false` to opt out. The runtime disables sharing when the variable is absent (e.g. manual Dashboard uploads without this variable). Enabling it permits a bearer of the share capability to open an audited SSH session without signing in.
 
    **Find a GitHub numeric user ID**:
 
@@ -322,16 +295,14 @@ With GitHub OAuth enabled, users can log in with their GitHub account and save/m
 
    Use `id`, not the username or `node_id`. The numeric ID does not change when the username changes; separate multiple IDs with commas.
 
-   | Configuration | GitHub sign-in | Anonymous SSH |
-   |---------------|----------------|---------------|
-   | Neither setting | All GitHub users | Allowed |
-   | `GITHUB_ALLOWED_USER_IDS` only | Allowlisted users only | Allowed |
-   | `REQUIRE_GITHUB_AUTH=true` only | All GitHub users | Disabled |
-   | Both settings | Allowlisted users only | Disabled (private-instance mode) |
+| Configuration                   | GitHub sign-in         | Anonymous SSH                    |
+| ---------------                 | ----------------       | ---------------                  |
+| Neither setting                 | All GitHub users       | Allowed                          |
+| `GITHUB_ALLOWED_USER_IDS` only  | Allowlisted users only | Allowed                          |
+| `REQUIRE_GITHUB_AUTH=true` only | All GitHub users       | Disabled                         |
+| Both settings                   | Allowlisted users only | Disabled (private-instance mode) |
 
-3. **Redeploy**: Save the variables and redeploy the existing Worker. The Durable Object migration in the repository initializes the required classes and database; deleting the existing Worker is not required.
-
-> **Environment Variable Type Recommendation**: `GITHUB_CLIENT_SECRET` must use the **Secret** type. `GITHUB_ALLOWED_USER_IDS` and `REQUIRE_GITHUB_AUTH` contain no credentials and may use plain-text variables. Secrets are stored in Cloudflare's encrypted storage, separate from code deployments, and will not be overwritten or lost during redeployments.
+1. **Redeploy**: Save the variables and redeploy the existing Worker. The Durable Object migration in the repository initializes the required classes and database; deleting the existing Worker is not required.
 
 > **Access Policy Note**: After `GITHUB_ALLOWED_USER_IDS` changes, existing sessions are checked again and become invalid on their next request; already established SSH WebSockets are not terminated. `REQUIRE_GITHUB_AUTH=true` depends on GitHub OAuth, so configure the Client ID, Client Secret, and `BASE_URL` together.
 
@@ -347,8 +318,6 @@ With GitHub OAuth enabled, users can log in with their GitHub account and save/m
 > [!WARNING]
 > Although the capability contains no SSH metadata, possession grants a full Shell and SFTP session using the owner's saved credential, so protect it like a temporary password. Sharing requires trusted fingerprints for the complete route and stops on fingerprint changes or `keyboard-interactive`/MFA challenges. Audit stores server PTY output rather than raw keyboard input: it usually shows shell-echoed commands but cannot prove every command executed with echo disabled, inside scripts, or through encoded input. Do not treat it as host-level enhanced auditing. A session is closed if its 5 MiB recording limit is reached or audit writes fail.
 
-> **Note**: Server credentials (passwords/private keys) are encrypted with AES-256-GCM in each user's UserDBDO SQLite database. The current encryption key is generated on first use and stored in the same Durable Object database as the ciphertext. For a saved-server connection, the browser never receives the plaintext credential; the server side transfers it internally through a one-time connection token.
-
 ##### Using SSH Jump Hosts
 
 Jump hosts require no additional environment variables, but GitHub OAuth and saved servers must be enabled:
@@ -360,7 +329,34 @@ Jump hosts require no additional environment variables, but GitHub OAuth and sav
 
 Every server in a jump relation must belong to the same GitHub user. Self-references and cycles are rejected, and a jump host cannot be deleted while another server references it. Public-address SSRF checks and Durable Object region placement use the outermost address reached directly by Cloudflare. Only that entry runs automatic region inference; selecting a jump host disables the downstream server's region option and does not send its private host information to IPinfo. Private targets are accepted only inside a server-resolved saved chain, and anonymous clients cannot submit jump configuration. TOFU host-key verification runs at every hop, with private target records scoped by the complete jump path.
 
+##### Connecting via Cloudflare Tunnel
+
+When adding or editing a server, choose the **"Cloudflare Tunnel"** transport mode to directly connect to private intranet servers (homelab NAS, private LAN hosts, internal dev machines) without public IPs or port forwarding:
+
+1. **Configure cloudflared on the internal server**: Run Cloudflare Tunnel on your internal machine and map a public hostname to your local SSH service (e.g., `service: ssh://localhost:22`).
+2. **Add the server in CloudSSH**:
+   - **Network Connection**: Switch to the "Cloudflare Tunnel" tab;
+   - **Tunnel Hostname**: Enter the configured public hostname (e.g., `ssh.example.com`);
+   - **Connection Region**: Selecting the region nearest to your internal server is recommended (e.g., `Asia-Pacific` for Asian hosts) to instantiate the Durable Object nearby and eliminate cross-ocean triangular routing;
+   - **Zero Trust Credentials (Optional)**: If Access policy is enabled for this hostname in Cloudflare Zero Trust, provide the Service Token's Client ID and Client Secret; one-click clearing is supported when the secret is no longer needed.
+3. **Connection & Experience**: Upon connection, the status bar displays dual-segment latency (`CF-XXX` for Cloudflare to tunnel handshake, `RTT` for browser to Cloudflare edge), with full terminal, SFTP online editing, and AI Agent features available.
+
+### AI Agent: Responses API Configuration and Sessions
+
+- **Protocol Specification & Provider Compatibility**:
+  - **Supported Providers**: Official OpenAI (`https://api.openai.com/v1`, models such as `gpt-4o`, `o1`, `o3-mini`, etc.), OpenRouter, and compatible platforms supporting the standard Responses API specification.
+  - **Currently Unsupported Providers**: Gateways providing only legacy Chat Completions (`/v1/chat/completions`) endpoints (such as direct DeepSeek API, Alibaba DashScope, Moonshot Kimi, etc.) will return HTTP 404/405 on `/responses`.
+  - **Recommendation**: If your current workflows rely heavily on models available exclusively through `/v1/chat/completions`, **it is recommended to temporarily stay on version v2.5.5** until upstream providers adopt the Responses specification.
+- **Configuration & Migration**: Configure an HTTPS API root (for example `https://api.openai.com/v1`) or a complete `/responses` address, model, and key. Legacy `/chat/completions` URLs are blocked and must be changed to the root URL. Changing the address strictly requires providing the API key (anti-credential-exfiltration defense preventing silent transmission of keys to new targets).
+- **Capability Requirements**: The provider and model must support the native Responses API: stateless execution (`store: false`), function tools, streaming Responses events, and JSON Schema output. Successful `/models` discovery does not prove these capabilities.
+- **Privacy & Data Retention**: All requests enforce `store: false` (stateless mode), preventing terminal output, command results, and credentials from being retained long-term on the model provider. History, checkpoints, and server memories remain controlled locally within CloudSSH.
+- **Context Budgets & Checkpoints**: The default context budget is 64,000 tokens and output budget 8,192 tokens (including reasoning). Usage is measured when available and conservatively estimated otherwise. Structured checkpoints start fresh continuation segments at the budget boundary without rewriting historical facts.
+- **Editing Branches & Verified Facts**: Edit checkpoints retain up to 64 recent user turns within a 512K-character total budget. Editing branches from before that turn and **does not undo remote operations**. Start a new chat if settings change or an edit checkpoint is unavailable; commands are never automatically replayed.
+- **Execution Safety Gates**: Incomplete arguments, stream failures, and failed model responses do not execute partial calls. Interrupted execution is explicitly recorded with verified status or "unknown" and requires inspection before retrying. Finishing streamed text does not finish the task.
+- **Auditing & Logging**: Worker logs contain only usage metadata: cumulative input/cached/output/reasoning tokens for main and checkpoint calls, and separate memory-call usage. They do not log request bodies or API keys.
+
 <a id="development"></a>
+
 ## Development
 
 ### Project Structure
@@ -371,46 +367,70 @@ This project uses pnpm monorepo workspace structure:
 CloudSSH/
 ├── src/                    # Backend source (Cloudflare Worker)
 │   ├── ssh/                # SSH protocol pure implementation layer
+│   ├── ai-endpoint.ts      # Responses API root validation & normalization
 │   └── worker/             # Worker entry and Durable Objects
+│       ├── agent/          # AI Agent control loop, Responses client, tools, safety
+│       ├── dns-check.ts    # DNS-rebinding SSRF defense
+│       ├── ip-geo.ts       # IPinfo region inference → locationHint
+│       ├── share-audit-writer.ts # Share session audit event writer & debouncing
+│       ├── ssh-interactive-auth.ts # RFC 4256 interactive keyboard auth state machine
+│       └── ssh-detached-buffer.ts   # Detached session 128KB buffer queue
 ├── frontend/               # Frontend source (independent workspace)
 │   └── src/                # TypeScript + xterm.js + trzsz
+│       ├── agent/          # AI assistant sidebar UI, code actions & error mapping
+│       ├── custom-theme-manager.ts # Multi-theme management modal & switching
+│       ├── i18n/           # English, Simplified Chinese, and Traditional Chinese UI strings and language detection
+│       ├── sftp-editor-session.ts # SFTP online editing coordinator
+│       ├── sftp-helpers.ts        # SFTP breadcrumb parsing and multi-key sorting
+│       └── snippet-variables.ts   # Command snippet parameter placeholders parsing & replacement
 ├── docs/                   # GitHub Pages static assets
 │   └── theme-editor/       # Visual theme editor
 ├── scripts/                # Build scripts
-├── tests/                  # Vitest, Playwright, and axe regression tests
-├── .github/workflows/      # CI quality gates and deployment workflows
+├── tests/                  # Vitest unit/integration + Playwright E2E and axe regression (build/ e2e/ ssh/ worker/)
+├── .github/workflows/      # CI/CD workflows (deploy / github-pages / sync-upstream)
+├── biome.json              # Code formatting and lint conventions
+├── playwright.config.ts    # Browser E2E test configuration
 ├── pnpm-workspace.yaml     # pnpm workspace configuration
 └── wrangler.toml           # Cloudflare deployment configuration
 ```
 
 ### Local Development
 
+<details>
+<summary><b>Click to expand Local Development Guide (prerequisites, dev server, commands, git workflow)</b></summary>
+
 #### Environment Setup
 
 1. **Fork and Clone the Repository**
+
    ```bash
    git clone https://github.com/<your-username>/CloudSSH.git
    cd CloudSSH
    ```
 
 2. **Install Dependencies** (root and frontend separately)
+
    ```bash
    pnpm install
    cd frontend && pnpm install
    ```
 
 3. **Login to Cloudflare** (required on first run, credentials are cached afterward)
+
    ```bash
    npx wrangler login
    ```
+
    > **Note**: When using Wrangler Dev for local development, it connects to your Cloudflare account to access Durable Objects and TCP Sockets. Real SSH TCP traffic is forwarded through Cloudflare's infrastructure.
 
 4. **Configure GitHub Actions** (Optional, for automatic deployment)
-   
+
    If you want to deploy to your own Cloudflare account via GitHub Actions, modify the repository owner in `.github/workflows/deploy.yml`:
+
    ```yaml
    if: github.repository_owner == 'your-github-username'
    ```
+
    Also configure the following Secrets in your repository Settings → Secrets and variables → Actions:
    - `CLOUDFLARE_API_TOKEN`: Your Cloudflare API Token
    - `CLOUDFLARE_ACCOUNT_ID`: Your Cloudflare Account ID
@@ -422,6 +442,7 @@ pnpm run dev
 ```
 
 This command builds the frontend and starts the Wrangler local development environment, supporting:
+
 - Automatic rebuild on frontend code changes
 - Automatic reload on Worker code changes
 - Full Durable Objects and TCP Sockets functionality
@@ -430,15 +451,15 @@ After the dev server starts, visit the local address shown in the terminal (usua
 
 #### Common Development Commands
 
-| Command | Description |
-|---------|-------------|
-| `pnpm run dev` | Build frontend + start Wrangler dev server |
-| `pnpm run build:frontend` | Build frontend only (output to `frontend/dist/`) |
-| `pnpm run typecheck` | Type-check Worker and frontend TypeScript |
-| `pnpm test` | Run Vitest unit and integration tests |
-| `pnpm run test:e2e` | Run Playwright browser E2E and axe accessibility tests |
-| `pnpm run verify` | Run type checks, tests, production build, and browser E2E |
-| `pnpm run deploy:test` | Build and deploy the isolated test environment |
+| Command                   | Description                                               |
+| ---------                 | -------------                                             |
+| `pnpm run dev`            | Build frontend + start Wrangler dev server                |
+| `pnpm run build:frontend` | Build frontend only (output to `frontend/dist/`)          |
+| `pnpm run typecheck`      | Type-check Worker and frontend TypeScript                 |
+| `pnpm test`               | Run Vitest unit and integration tests                     |
+| `pnpm run test:e2e`       | Run Playwright browser E2E and axe accessibility tests    |
+| `pnpm run verify`         | Run type checks, tests, production build, and browser E2E |
+| `pnpm run deploy:test`    | Build and deploy the isolated test environment            |
 
 #### Submitting Changes
 
@@ -456,38 +477,31 @@ test branch (dev/test)  ──merge──>  main branch (production)
 
 > **Note**: The `main` branch has protection rules that prevent direct pushes. All changes must be committed to the `test` branch first. Do NOT create `feat/xxx`, `fix/xxx` or any other feature branches — commit directly to `test`.
 
-### Tech Stack
-
-| Layer | Technology | Description |
-|-------|------------|-------------|
-| **Frontend** | TypeScript + Vite + xterm.js | Web terminal emulator, WebGL hardware acceleration |
-| **UI Framework** | Tailwind CSS (local Vite/PostCSS build) + Theme V2 | The app supports built-in theme switching, custom JSON import, and signed-in account sync; editing and export live on GitHub Pages |
-| **File Transfer** | trzsz.js | Supports trz/tsz commands, drag-and-drop upload, resumable transfers |
-| **AI Assistant** | BYOK + OpenAI-compatible API | Bring your own API key, supports DeepSeek and other compatible models |
-| **Backend** | Cloudflare Workers | Serverless edge computing |
-| **Session Management** | Durable Objects | SSH session isolation; browser WebSockets use the Hibernation API entry pattern, while active outbound TCP prevents hibernation |
-| **Data Storage** | Durable Objects SQLite | User data, server configurations |
-| **Package Manager** | pnpm (workspace) | Monorepo dependency management |
+</details>
 
 <a id="contributors"></a>
+
 ## Contributors
 
 Thank you to the following contributors for improving CloudSSH's code, compatibility, and user experience:
 
-| Contributor | Key Contributions |
-|-------------|-------------------|
-| [TanXin (@newbietan)](https://github.com/newbietan) | Project creator and maintainer; Cloudflare Serverless architecture, SSH/SFTP, AI Agent, security, theming, and engineering infrastructure |
-| [David xu (@xqdoo00o)](https://github.com/xqdoo00o) | Dropbear compatibility, migration to trzsz file transfer, PTY sizing, and session exit/reconnection improvements |
-| [vonl1 (@vonl1)](https://github.com/vonl1) | Terminal selection auto-copy, Vim-compatible right-click paste, masked IPv4/IPv6 display with quick full-address copy, and automatic server OS detection with branded icons |
+| Contributor                                          | Key Contributions                                                                                                                                                           |
+| -------------                                        | -------------------                                                                                                                                                         |
+| [TanXin (@newbietan)](https://github.com/newbietan)  | Project creator and maintainer; Cloudflare Serverless architecture, SSH/SFTP, AI Agent, security, theming, and engineering infrastructure                                   |
+| [David xu (@xqdoo00o)](https://github.com/xqdoo00o)  | Dropbear compatibility, migration to trzsz file transfer, PTY sizing, and session exit/reconnection improvements                                                            |
+| [vonl1 (@vonl1)](https://github.com/vonl1)           | Terminal selection auto-copy, Vim-compatible right-click paste, masked IPv4/IPv6 display with quick full-address copy, and automatic server OS detection with branded icons |
+| [Leon Xu (@xuthuslei)](https://github.com/xuthuslei) | Fixed encryption-state transitions and packet parsing when `SSH_MSG_NEWKEYS` and the first encrypted packet arrive in the same TCP chunk; fixed the v1.11.0 jump-host authentication-timing regression (#108) |
+| [DAVID TB (@tbdavid2019)](https://github.com/tbdavid2019) | Contributed Traditional Chinese (zh-TW) interface and localized dictionary, expanding frontend language switching and theme editor support (#147) |
 
 The list and contribution summaries are based on Git history and accepted Pull Requests; one contributor may appear under multiple historical Git author names or email addresses. See [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors) for the complete record. Issues and Pull Requests are welcome.
 
 <a id="license"></a>
+
 ## License
 
-This project is open-sourced under the [Apache License 2.0](LICENSE). 
+This project is open-sourced under the [Apache License 2.0](LICENSE).
 
-**Original Author and Attribution Requirement**: CloudSSH was initiated and architected by [TanXin (@newbietan)](https://github.com/newbietan), who continues to maintain the project. Any modified, derivative, or redistributed version based on this project must retain the license, copyright, and attribution notices in [LICENSE](LICENSE) and [NOTICE](NOTICE), and clearly state in its documentation or other accompanying notices: “This project is based on CloudSSH, originally created by TanXin (@newbietan),” together with a link to the original project.
+**Original Author and Attribution Requirement**: CloudSSH was initiated and architected by [TanXin (@newbietan)](https://github.com/newbietan), who continues to maintain the project. Any modified, derivative, or redistributed version based on this project must retain the license, copyright, and attribution notices in [LICENSE](LICENSE) and [NOTICE](NOTICE), and clearly state and credit the original author and original project link.
 
 Commercial use, modification, and redistribution remain governed by the [Apache License 2.0](LICENSE). The attribution requirement above preserves the source and authorship of the original project without restricting other rights granted by the license.
 

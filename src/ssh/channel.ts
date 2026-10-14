@@ -1,10 +1,10 @@
 import {
-  SSH_MSG_CHANNEL_OPEN,
-  SSH_MSG_CHANNEL_WINDOW_ADJUST,
-  SSH_MSG_CHANNEL_DATA,
-  SSH_MSG_CHANNEL_REQUEST,
-  SSH_MSG_CHANNEL_EOF,
   SSH_MSG_CHANNEL_CLOSE,
+  SSH_MSG_CHANNEL_DATA,
+  SSH_MSG_CHANNEL_EOF,
+  SSH_MSG_CHANNEL_OPEN,
+  SSH_MSG_CHANNEL_REQUEST,
+  SSH_MSG_CHANNEL_WINDOW_ADJUST,
 } from '../types';
 import { encodeString, readUint32, writeUint32 } from './utils';
 
@@ -31,15 +31,35 @@ function writeBytes(target: Uint8Array, offset: number, source: Uint8Array): num
   return offset + source.length;
 }
 
+/** RFC 4254 §5.1: 默认直连 TCP 模式单包最大载荷上限 (32KB)，满血最高吞吐 */
+export const SSH_CHANNEL_DEFAULT_MAX_PACKET_SIZE = 32768;
+
+/**
+ * RFC 4254 §5.1: 隧道模式 SSH 通道载荷上限（16KiB）。
+ * 这不含 SSH/加密开销；cloudflared 的 16KiB 消息边界由 tunnel-stream.ts 在加密后分帧保护。
+ */
+export const SSH_CHANNEL_TUNNEL_MAX_PACKET_SIZE = 16384;
+
+/** 兼容别名：默认直连上限 */
+export const SSH_CHANNEL_MAX_PACKET_SIZE = SSH_CHANNEL_DEFAULT_MAX_PACKET_SIZE;
+
 export class SSHChannel {
   private localChannelID: number = 0;
   private remoteChannelID: number = 0;
   private localWindowSize: number = 2097152;
   private remoteWindowSize: number = 0;
-  private maxPacketSize: number = 32768;
+  private maxPacketSize: number = SSH_CHANNEL_DEFAULT_MAX_PACKET_SIZE;
   private pendingLocalWindowAdjustBytes: number = 0;
   private eofSent: boolean = false;
   private closed: boolean = false;
+
+  constructor(maxPacketSize: number = SSH_CHANNEL_DEFAULT_MAX_PACKET_SIZE) {
+    this.maxPacketSize = maxPacketSize;
+  }
+
+  getMaxPacketSize(): number {
+    return this.maxPacketSize;
+  }
 
   getLocalChannelID(): number {
     return this.localChannelID;
@@ -74,13 +94,13 @@ export class SSHChannel {
     host: string,
     port: number,
     originHost: string = '127.0.0.1',
-    originPort: number = 0,
+    originPort: number = 0
   ): Uint8Array {
     this.localChannelID = channelID;
     const hostField = encodeString(host);
     const originHostField = encodeString(originHost);
     const payload = new Uint8Array(
-      1 + DIRECT_TCPIP_FIELD.length + 12 + hostField.length + 4 + originHostField.length + 4,
+      1 + DIRECT_TCPIP_FIELD.length + 12 + hostField.length + 4 + originHostField.length + 4
     );
     let offset = 0;
     payload[offset++] = SSH_MSG_CHANNEL_OPEN;
@@ -114,7 +134,13 @@ export class SSHChannel {
 
   buildPTYRequest(cols: number, rows: number): Uint8Array {
     const payload = new Uint8Array(
-      1 + 4 + PTY_REQ_FIELD.length + 1 + XTERM_256COLOR_FIELD.length + 16 + EMPTY_TERMINAL_MODES_FIELD.length
+      1 +
+        4 +
+        PTY_REQ_FIELD.length +
+        1 +
+        XTERM_256COLOR_FIELD.length +
+        16 +
+        EMPTY_TERMINAL_MODES_FIELD.length
     );
     let offset = 0;
     payload[offset++] = SSH_MSG_CHANNEL_REQUEST;

@@ -1,15 +1,16 @@
+/// <reference lib="es2022" />
 import { expect, test } from '@playwright/test';
 import { blockOptionalThirdPartyAssets } from './helpers';
 
 const servers = Array.from({ length: 10 }, (_, index) => ({
   id: index + 1,
   user_id: 1,
-  name: index === 0
-    ? '这是一台名称很长但不应撑破移动端卡片的生产服务器'
-    : `移动端服务器 ${index + 1}`,
-  host: index === 0
-    ? 'a-very-long-host-name-that-must-not-overflow.example.com'
-    : `server-${index + 1}.example.com`,
+  name:
+    index === 0 ? '这是一台名称很长但不应撑破移动端卡片的生产服务器' : `移动端服务器 ${index + 1}`,
+  host:
+    index === 0
+      ? 'a-very-long-host-name-that-must-not-overflow.example.com'
+      : `server-${index + 1}.example.com`,
   port: 22,
   username: index === 0 ? 'long-mobile-deployment-username' : 'deploy',
   auth_method: 'publickey',
@@ -25,7 +26,7 @@ test.use({ viewport: { width: 320, height: 568 }, hasTouch: true });
 test.beforeEach(async ({ page }) => {
   await blockOptionalThirdPartyAssets(page);
   await page.route('**/api/user/theme', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '{"theme":null}' }),
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"theme":null}' })
   );
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
@@ -37,13 +38,13 @@ test.beforeEach(async ({ page }) => {
         username: 'mobile-layout-tester-with-a-long-name',
         avatar_url: '',
       }),
-    }),
+    })
   );
   await page.route('**/api/servers', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(servers) }),
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(servers) })
   );
   await page.route('**/api/ai/config', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '{"configured":false}' }),
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"configured":false}' })
   );
 });
 
@@ -96,7 +97,7 @@ test('服务器分页在手机、触屏平板和桌面宽度间自动切换', as
   await expect(page.locator('.server-card')).toHaveCount(6);
 
   await page.setViewportSize({ width: 1200, height: 800 });
-  await expect(page.locator('.server-card')).toHaveCount(9);
+  await expect(page.locator('.server-card')).toHaveCount(6);
 });
 
 test.describe('响应式断点边界', () => {
@@ -105,7 +106,7 @@ test.describe('响应式断点边界', () => {
   test('768px 精细指针设备统一使用桌面布局和分页', async ({ page }) => {
     await page.goto('/?lang=zh-CN');
 
-    await expect(page.locator('.server-card')).toHaveCount(9);
+    await expect(page.locator('.server-card')).toHaveCount(6);
     await expect(page.locator('#user-space-header-actions')).toBeVisible();
     await expect(page.locator('#user-space-more-btn')).toBeHidden();
   });
@@ -113,6 +114,14 @@ test.describe('响应式断点边界', () => {
 
 test('移动端服务器卡片不会被长文本撑宽且表单弹窗在视口内滚动', async ({ page }) => {
   await page.goto('/?lang=zh-CN');
+  await expect(page.locator('.server-card')).toHaveCount(3);
+  await expect
+    .poll(() =>
+      page
+        .locator('#card-1 .server-card-title')
+        .evaluate((title) => getComputedStyle(title).overflow)
+    )
+    .toBe('hidden');
 
   const cardLayout = await page.locator('#card-1').evaluate((card) => {
     const title = card.querySelector<HTMLElement>('.server-card-title')!;
@@ -130,18 +139,20 @@ test('移动端服务器卡片不会被长文本撑宽且表单弹窗在视口�
   await page.locator('#add-server-btn').click();
   await expect(page.locator('#server-modal')).toBeVisible();
 
-  const modalLayout = await page.locator('#server-modal .responsive-modal-panel').evaluate((panel) => {
-    const rect = panel.getBoundingClientRect();
-    const input = document.getElementById('server-name')!;
-    return {
-      top: Math.round(rect.top),
-      bottom: Math.round(rect.bottom),
-      clientHeight: panel.clientHeight,
-      scrollHeight: panel.scrollHeight,
-      overflowY: getComputedStyle(panel).overflowY,
-      inputFontSize: getComputedStyle(input).fontSize,
-    };
-  });
+  const modalLayout = await page
+    .locator('#server-modal .responsive-modal-panel')
+    .evaluate((panel) => {
+      const rect = panel.getBoundingClientRect();
+      const input = document.getElementById('server-name')!;
+      return {
+        top: Math.round(rect.top),
+        bottom: Math.round(rect.bottom),
+        clientHeight: panel.clientHeight,
+        scrollHeight: panel.scrollHeight,
+        overflowY: getComputedStyle(panel).overflowY,
+        inputFontSize: getComputedStyle(input).fontSize,
+      };
+    });
 
   expect(modalLayout.top).toBeGreaterThanOrEqual(0);
   expect(modalLayout.bottom).toBeLessThanOrEqual(568);
@@ -150,10 +161,14 @@ test('移动端服务器卡片不会被长文本撑宽且表单弹窗在视口�
   expect(modalLayout.inputFontSize).toBe('16px');
 
   await page.setViewportSize({ width: 568, height: 320 });
-  await expect.poll(() => page.locator('#server-modal .responsive-modal-panel').evaluate((panel) => {
-    const rect = panel.getBoundingClientRect();
-    return rect.top >= 0 && rect.bottom <= window.innerHeight;
-  })).toBe(true);
+  await expect
+    .poll(() =>
+      page.locator('#server-modal .responsive-modal-panel').evaluate((panel) => {
+        const rect = panel.getBoundingClientRect();
+        return rect.top >= 0 && rect.bottom <= window.innerHeight;
+      })
+    )
+    .toBe(true);
 
   await page.locator('#server-submit-btn').scrollIntoViewIfNeeded();
   await expect(page.locator('#server-submit-btn')).toBeVisible();
@@ -183,4 +198,44 @@ test('移动端 AI 设置弹窗完整位于可视区域内', async ({ page }) =>
   expect(layout.bottom).toBeLessThanOrEqual(568);
   expect(layout.overflowY).toBe('auto');
   expect(layout.inputFontSize).toBe('16px');
+});
+
+test('移动端用户空间提供自定义快捷键入口且桌面端隐藏', async ({ page }) => {
+  await page.goto('/?lang=zh-CN');
+
+  // 1. 移动端视口（375x667）下，点击用户空间更多菜单可看到自定义快捷键入口
+  await page.setViewportSize({ width: 375, height: 667 });
+  await page.locator('#user-space-more-btn').click();
+  const mobileShortcutBtn = page.locator('#mobile-shortcuts-config-btn');
+  await expect(mobileShortcutBtn).toBeVisible();
+
+  // 点击打开弹窗
+  await mobileShortcutBtn.click();
+  const modal = page.locator('#mobile-shortcuts-modal');
+  await expect(modal).toBeVisible();
+  await expect(page.locator('#mobile-shortcuts-presets')).toBeVisible();
+
+  // 自定义按键的名称与发送内容输入框均应完整可见，文案为“按键名称”/“发送内容”，小字号 11px，且内容输入框不被挤扁
+  const labelInput = page.locator('#mobile-shortcut-custom-label');
+  const valueInput = page.locator('#mobile-shortcut-custom-value');
+  await expect(labelInput).toBeVisible();
+  await expect(valueInput).toBeVisible();
+  await expect(labelInput).toHaveAttribute('placeholder', '按键名称');
+  await expect(valueInput).toHaveAttribute('placeholder', '发送内容');
+  const labelBox = await labelInput.boundingBox();
+  const valueBox = await valueInput.boundingBox();
+  expect(labelBox?.width).toBeCloseTo(96, 1);
+  expect(valueBox?.width).toBeGreaterThan(80);
+  const labelFontSize = await labelInput.evaluate((el) => getComputedStyle(el).fontSize);
+  const valueFontSize = await valueInput.evaluate((el) => getComputedStyle(el).fontSize);
+  expect(labelFontSize).toBe('11px');
+  expect(valueFontSize).toBe('11px');
+
+  // 关闭弹窗
+  await page.locator('#mobile-shortcuts-modal .panel-close-btn').click();
+  await expect(modal).toBeHidden();
+
+  // 2. 切换到桌面端视口（1280x800），该按钮必须被严格隐藏
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(mobileShortcutBtn).toBeHidden();
 });

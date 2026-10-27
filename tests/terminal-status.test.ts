@@ -15,6 +15,9 @@ describe('SSH 状态国际化', () => {
     expect(localizedSSHMessage('认证失败：用户名或密码错误', 'auth_failed')).toBe(
       'Authentication failed: the username, credential, or interactive response was rejected'
     );
+    expect(localizedSSHMessage('服务器拒绝无认证', 'auth_none_rejected')).toBe(
+      'The server rejected none authentication. Select an authentication method supported by the server.'
+    );
     expect(localizedSSHMessage('服务器要求交互式认证', 'auth_interactive_required')).toBe(
       'The server requires interactive authentication'
     );
@@ -53,6 +56,17 @@ describe('SSH 状态国际化', () => {
         message: 'invalid packet',
       })
     ).toBe('Packet processing error: invalid packet');
+  });
+
+  it('区分证书签名检查、TOFU 信任与无效主机密钥', () => {
+    expect(localizedSSHMessage('后端回退消息', 'host_key_invalid')).toBe(
+      'Invalid host key or certificate. Connection closed; check the server configuration.'
+    );
+    expect(localizedSSHMessage('后端回退消息', 'host_key_certificate_tofu')).toBe(
+      'Host certificate signature checked; host identity uses the underlying public-key fingerprint (TOFU), not CA trust.'
+    );
+    expect(localizedSSHMessage('', 'algorithm_error', { message: 'No common host key algorithm' }))
+      .toBe('Algorithm negotiation failed: No common host key algorithm');
   });
 
   it('输出闸门关闭事件使用本地化文案', () => {

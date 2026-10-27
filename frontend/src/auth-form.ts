@@ -5,6 +5,7 @@ import { onLocaleChange, t, translateDocument } from './i18n';
 import { openAdminHashGeneratorDialog } from './admin-hash-generator';
 import { loadKnownFingerprint } from './known-hosts';
 import { parsePort } from './port';
+import { preparePrivateKey } from './private-key-import';
 import { stretchAdminPassword } from './password-stretch';
 import { populateRegionSelect } from './regions';
 import type { TabManager } from './tab-manager';
@@ -110,12 +111,17 @@ export class ConnectionForm {
         sitekey: string;
         githubAuthEnabled: boolean;
         githubAuthRequired: boolean;
-        authMode?: 'password' | 'github' | 'anonymous';
+        authMode?: 'password' | 'cf_access' | 'github' | 'anonymous';
         passwordAuth?: { kdf: string; iterations: number; salt: string } | null;
         passwordHashInvalid?: boolean;
       };
       this.turnstileEnabled = config.turnstileEnabled;
       this.turnstileSitekey = config.sitekey;
+
+      // Cloudflare Access 模式：由 Cloudflare 边缘网关接管身份，不渲染外部登录表单
+      if (config.authMode === 'cf_access') {
+        return;
+      }
 
       // 单管理员密码模式：登录入口整体替换（与 GitHub 入口互斥，不并列展示）。
       // 哈希损坏 → fail closed 错误面板（与后端坏哈希拒绝登录的语义对齐）
@@ -570,12 +576,15 @@ export class ConnectionForm {
           <div class="flex gap-2 mb-3">
             <button type="button" id="auth-tab-password" class="auth-tab auth-tab-active px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="common.password">密码</button>
             <button type="button" id="auth-tab-key" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="common.privateKey">私钥</button>
+            <button type="button" id="auth-tab-none" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="auth.none"></button>
           </div>
+          <p id="auth-none-section" class="text-xs text-muted" style="display:none;" data-i18n="auth.noneHint"></p>
           <div id="auth-password-section">
             <div class="flex items-center">
               <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">key</span>
-              <input id="password" class="terminal-input text-[13px]" placeholder="••••••••" type="password" data-i18n-aria-label="common.password" aria-label="密码">
+              <input id="password" class="terminal-input text-[13px]" placeholder="••••••••" type="password" data-i18n-aria-label="common.password" aria-label="密码" aria-describedby="auth-password-hint">
             </div>
+            <p id="auth-password-hint" class="text-xs text-muted mt-2" data-i18n="auth.passwordHint"></p>
           </div>
           <div id="auth-key-section" style="display:none;">
             <textarea id="private-key" class="terminal-input text-[11px] w-full" rows="5" data-i18n-placeholder="auth.keyPlaceholder" data-i18n-aria-label="common.privateKey" aria-label="私钥" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...粘贴私钥内容...&#10;-----END OPENSSH PRIVATE KEY-----" style="resize:vertical;border:1px solid var(--border-strong);padding:8px;"></textarea>
@@ -641,6 +650,9 @@ export class ConnectionForm {
     document.getElementById('auth-tab-key')!.addEventListener('click', () => {
       this.setAuthMode('key');
     });
+    document.getElementById('auth-tab-none')!.addEventListener('click', () => {
+      this.setAuthMode('none');
+    });
 
     // File upload for private key
     const fileInput = document.getElementById('private-key-file') as HTMLInputElement;
@@ -669,19 +681,16 @@ export class ConnectionForm {
     });
   }
 
-  private authMode: 'password' | 'key' = 'password';
+  private authMode: 'password' | 'key' | 'none' = 'password';
 
-  private setAuthMode(mode: 'password' | 'key'): void {
+  private setAuthMode(mode: 'password' | 'key' | 'none'): void {
     this.authMode = mode;
-    const pwTab = document.getElementById('auth-tab-password')!;
-    const keyTab = document.getElementById('auth-tab-key')!;
-    const pwSection = document.getElementById('auth-password-section')!;
-    const keySection = document.getElementById('auth-key-section')!;
-
-    pwTab.classList.toggle('auth-tab-active', mode === 'password');
-    keyTab.classList.toggle('auth-tab-active', mode === 'key');
-    pwSection.style.display = mode === 'password' ? '' : 'none';
-    keySection.style.display = mode === 'key' ? '' : 'none';
+    for (const value of ['password', 'key', 'none'] as const) {
+      const tab = document.getElementById(`auth-tab-${value}`)!;
+      tab.classList.toggle('auth-tab-active', mode === value);
+      tab.setAttribute('aria-pressed', String(mode === value));
+      document.getElementById(`auth-${value}-section`)!.style.display = mode === value ? '' : 'none';
+    }
   }
 
   private renderRecentConnections(): void {
@@ -711,20 +720,25 @@ export class ConnectionForm {
       itemEl.className =
         'flex justify-between items-center text-xs p-2 border border-dim bg-surface/50 hover:bg-surface hover:border-[var(--accent)] transition-all cursor-pointer group relative';
 
-      const authLabel = item.authMethod === 'publickey' ? 'KEY' : 'PWD';
+      const authLabel =
+        item.authMethod === 'none' ? 'NONE' : item.authMethod === 'publickey' ? 'KEY' : 'PWD';
       const labelText = `${item.username}@${item.host}:${item.port}`;
 
       // pi-lens-ignore: no-inner-html
       itemEl.innerHTML = `
         <div class="flex items-center gap-2 overflow-hidden mr-2 select-none flex-1">
           <span class="material-symbols-outlined text-muted" style="font-size: 14px;">history</span>
-          <span class="text-on-surface truncate" title="${labelText}">${labelText}</span>
+          <span class="recent-connection-label text-on-surface truncate"></span>
           <span class="text-[9px] font-bold tracking-[0.05em] text-muted border border-dim px-1.5 py-0.2 shrink-0">${authLabel}</span>
         </div>
         <button type="button" class="delete-history-btn text-muted hover:text-error flex items-center justify-center p-0.5" title="${t('auth.removeHistory')}">
           <span class="material-symbols-outlined" style="font-size: 14px;">close</span>
         </button>
       `;
+
+      const label = itemEl.querySelector<HTMLElement>('.recent-connection-label')!;
+      label.textContent = labelText;
+      label.title = labelText;
 
       // 点击填入
       itemEl.addEventListener('click', (e) => {
@@ -746,7 +760,7 @@ export class ConnectionForm {
     host: string;
     port: number;
     username: string;
-    authMethod: 'password' | 'publickey';
+    authMethod: 'password' | 'publickey' | 'none';
     encryptedCred?: string;
     region?: string;
   }): Promise<void> {
@@ -760,11 +774,9 @@ export class ConnectionForm {
       anonRegionSelect.value = item.region || '';
     }
 
-    if (item.authMethod === 'publickey') {
-      this.setAuthMode('key');
-    } else {
-      this.setAuthMode('password');
-    }
+    this.setAuthMode(
+      item.authMethod === 'publickey' ? 'key' : item.authMethod === 'none' ? 'none' : 'password'
+    );
 
     if (item.encryptedCred) {
       const cred = await decryptCredentials(item.encryptedCred);
@@ -842,6 +854,8 @@ export class ConnectionForm {
   }
 
   private async handleConnect(): Promise<void> {
+    const connectButton = document.getElementById('connect-btn') as HTMLButtonElement;
+    if (connectButton.disabled) return;
     const hostInput = (document.getElementById('host') as HTMLInputElement).value;
     const host = hostInput.replace(/^\[|\]$/g, '').trim();
     const portInput = document.getElementById('port') as HTMLInputElement;
@@ -850,8 +864,9 @@ export class ConnectionForm {
     const password = (document.getElementById('password') as HTMLInputElement).value;
     const privateKey = (document.getElementById('private-key') as HTMLTextAreaElement).value;
     const selectedPassword = this.authMode === 'password' ? password : undefined;
-    const selectedPrivateKey = this.authMode === 'key' ? privateKey : undefined;
-    const remember = (document.getElementById('remember-me') as HTMLInputElement).checked;
+    let selectedPrivateKey = this.authMode === 'key' ? privateKey : undefined;
+    const authMethod = this.authMode === 'key' ? 'publickey' : this.authMode;
+    let remember = (document.getElementById('remember-me') as HTMLInputElement).checked;
     // 匿名路径区域选择（仅作为 manual override；系统不会对此路径自动推断）
     const anonRegionSelect = document.getElementById('anon-region') as HTMLSelectElement | null;
     const regionValue = anonRegionSelect ? anonRegionSelect.value : '';
@@ -871,15 +886,6 @@ export class ConnectionForm {
         variant: 'warning',
       });
       portInput.focus();
-      return;
-    }
-
-    if (this.authMode === 'password' && !password) {
-      notify(t('auth.validationPassword'), {
-        title: t('auth.incompleteCredentials'),
-        variant: 'warning',
-      });
-      (document.getElementById('password') as HTMLInputElement)?.focus();
       return;
     }
 
@@ -904,6 +910,25 @@ export class ConnectionForm {
       return;
     }
 
+    if (selectedPrivateKey) {
+      connectButton.disabled = true;
+      try {
+        const prepared = await preparePrivateKey(selectedPrivateKey, false);
+        if (!prepared || this.authMode !== 'key' ||
+            document.getElementById('auth-section')!.classList.contains('hidden') ||
+            (document.getElementById('host') as HTMLInputElement).value !== hostInput ||
+            (document.getElementById('username') as HTMLInputElement).value !== username ||
+            (document.getElementById('private-key') as HTMLTextAreaElement).value !== privateKey ||
+            parsePort(portInput.value) !== port) return;
+        selectedPrivateKey = prepared.key;
+        if (prepared.unlocked) {
+          remember = false;
+          (document.getElementById('remember-me') as HTMLInputElement).checked = false;
+          notify(t('auth.keyUnlockTransient'), { variant: 'info' });
+        }
+      } finally { connectButton.disabled = false; }
+    }
+
     // 保存连接历史与凭据
     let encryptedCred: string | undefined;
     if (remember) {
@@ -913,7 +938,7 @@ export class ConnectionForm {
         username,
         password: selectedPassword ?? '',
         privateKey: selectedPrivateKey,
-        authMethod: this.authMode === 'key' ? 'publickey' : 'password',
+        authMethod,
       });
     }
 
@@ -933,7 +958,7 @@ export class ConnectionForm {
       host,
       port,
       username,
-      authMethod: this.authMode === 'key' ? 'publickey' : 'password',
+      authMethod,
       timestamp: Date.now(),
       ...(regionValue ? { region: regionValue } : {}), // 区域偏好持久化到 recent
       ...(encryptedCred ? { encryptedCred } : {}),
@@ -975,7 +1000,7 @@ export class ConnectionForm {
         port,
         username,
         password: selectedPassword,
-        authMethod: this.authMode === 'key' ? 'publickey' : 'password',
+        authMethod,
         privateKey: selectedPrivateKey,
         expectedFingerprint: expectedFingerprint || undefined,
         locationHint: regionValue || undefined,
